@@ -1,0 +1,34 @@
+package com.github.chenfeikun.raft.entity;
+
+/**
+ * @desciption: EntriesResult
+ * @CreateTime: 2019-03-07
+ * @author: chenfeikun
+ */
+public class EntriesResult {
+
+    // term of follower
+    private long term;
+    private boolean success;
+
+    public EntriesResult(long term, boolean success) {
+        this.term = term;
+        this.success = success;
+    }
+
+    public long getTerm() {
+        return term;
+    }
+
+    public void setTerm(long term) {
+        this.term = term;
+    }
+
+    public boolean isSuccess() {
+        return success;
+    }
+
+    public void setSuccess(boolean success) {
+        this.success = success;
+    }
+}
