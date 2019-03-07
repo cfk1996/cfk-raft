@@ -17,6 +17,37 @@ public class VoteResult {
         this.voteGranted = voteGranted;
     }
 
+    private VoteResult(Builder builder) {
+        this.term = builder.term;
+        this.voteGranted = builder.voteGranted;
+    }
+
+    public static final Builder newBuilder() {
+        return new Builder();
+    }
+
+    public static final class Builder {
+
+        private long term;
+        private boolean voteGranted;
+
+        private Builder() {}
+
+        public Builder term(long term) {
+            this.term = term;
+            return this;
+        }
+
+        public Builder voteGranted(boolean isVote) {
+            this.voteGranted = isVote;
+            return this;
+        }
+
+        public VoteResult build() {
+            return new VoteResult(this);
+        }
+    }
+
     public long getTerm() {
         return term;
     }

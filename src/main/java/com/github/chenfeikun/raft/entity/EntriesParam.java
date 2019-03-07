@@ -16,19 +16,69 @@ public class EntriesParam {
     // index of prev log
     private int prevLogIndex;
     // term of prev log
-    private long prevLogItem;
+    private long prevLogTerm;
     // log entries to append
     private LogEntry[] entries;
     // commit index of leader
     private int leaderCommit;
 
-    public EntriesParam(long term, int leaderId, int prevLogIndex, long prevLogItem, LogEntry[] entries, int leaderCommit) {
-        this.term = term;
-        this.leaderId = leaderId;
-        this.prevLogIndex = prevLogIndex;
-        this.prevLogItem = prevLogItem;
-        this.entries = entries;
-        this.leaderCommit = leaderCommit;
+    private EntriesParam(Builder builder) {
+        setTerm(builder.term);
+        setLeaderId(builder.leaderId);
+        setPrevLogIndex(builder.prevLogIndex);
+        setPrevLogTerm(builder.term);
+        setEntries(builder.entries);
+        setLeaderCommit(builder.leaderCommit);
+    }
+
+    public static final Builder newBuilder() {
+        return new Builder();
+    }
+
+    public static final class Builder {
+        private long term;
+        private int leaderId;
+        private int prevLogIndex;
+        private long prevLogTerm;
+        private LogEntry[] entries;
+        private int leaderCommit;
+
+        private Builder() {}
+
+        public Builder term(long term) {
+            this.term = term;
+            return this;
+        }
+
+        public Builder leaderId(int id) {
+            this.leaderId = id;
+            return this;
+        }
+
+        public Builder prevLogIndex(int index) {
+            this.prevLogIndex = index;
+            return this;
+        }
+
+        public Builder prevLogTerm(long term) {
+            this.prevLogTerm = term;
+            return this;
+        }
+
+        public Builder entries(LogEntry[] entries) {
+            this.entries = entries;
+            return this;
+        }
+
+        public Builder leaderCommit(int index) {
+            this.leaderCommit = index;
+            return this;
+        }
+
+        public EntriesParam build() {
+            return new EntriesParam(this);
+        }
+
     }
 
     public long getTerm() {
@@ -55,12 +105,12 @@ public class EntriesParam {
         this.prevLogIndex = prevLogIndex;
     }
 
-    public long getPrevLogItem() {
-        return prevLogItem;
+    public long getPrevLogTerm() {
+        return prevLogTerm;
     }
 
-    public void setPrevLogItem(long prevLogItem) {
-        this.prevLogItem = prevLogItem;
+    public void setPrevLogTerm(long prevLogTerm) {
+        this.prevLogTerm = prevLogTerm;
     }
 
     public LogEntry[] getEntries() {

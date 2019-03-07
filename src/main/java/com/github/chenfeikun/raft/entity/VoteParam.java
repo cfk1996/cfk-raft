@@ -22,6 +22,51 @@ public class VoteParam {
         this.lastLogTerm = lastLogTerm;
     }
 
+    private VoteParam(Builder builder) {
+        this.term = builder.term;
+        this.candidateId = builder.candidateId;
+        this.lastLogIndex = builder.lastLogIndex;
+        this.lastLogTerm = builder.lastLogTerm;
+    }
+
+    public static final Builder newBuilder() {
+        return new Builder();
+    }
+
+    public static final class Builder {
+
+        private long term;
+        private int candidateId;
+        private int lastLogIndex;
+        private long lastLogTerm;
+
+        private Builder() {}
+
+        public Builder term(long term) {
+            this.term = term;
+            return this;
+        }
+
+        public Builder candidateId(int id) {
+            this.candidateId = id;
+            return this;
+        }
+
+        public Builder lastLogIndex(int index) {
+            this.lastLogIndex = index;
+            return this;
+        }
+
+        public Builder lastLogTerm(long term) {
+            this.lastLogTerm = term;
+            return this;
+        }
+
+        public VoteParam build() {
+            return new VoteParam(this);
+        }
+    }
+
     public long getTerm() {
         return term;
     }
