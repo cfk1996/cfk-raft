@@ -63,4 +63,12 @@ public class EntriesResult {
         }
 
     }
+
+    @Override
+    public String toString() {
+        return "EntriesResult{" +
+                "term=" + term +
+                ", success=" + success +
+                '}';
+    }
 }

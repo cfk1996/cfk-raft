@@ -1,6 +1,8 @@
 package com.github.chenfeikun.raft.entity;
 
-import com.github.chenfeikun.raft.LogEntry;
+import com.github.chenfeikun.raft.logModule.LogEntry;
+
+import java.util.Arrays;
 
 /**
  * @desciption: EntriesParam
@@ -127,5 +129,17 @@ public class EntriesParam {
 
     public void setLeaderCommit(int leaderCommit) {
         this.leaderCommit = leaderCommit;
+    }
+
+    @Override
+    public String toString() {
+        return "EntriesParam{" +
+                "term=" + term +
+                ", leaderId=" + leaderId +
+                ", prevLogIndex=" + prevLogIndex +
+                ", prevLogTerm=" + prevLogTerm +
+                ", entries=" + Arrays.toString(entries) +
+                ", leaderCommit=" + leaderCommit +
+                '}';
     }
 }

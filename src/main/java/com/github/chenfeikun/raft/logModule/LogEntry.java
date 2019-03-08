@@ -1,4 +1,4 @@
-package com.github.chenfeikun.raft;
+package com.github.chenfeikun.raft.logModule;
 
 /**
  * @desciption: LogEntry

@@ -1,4 +1,4 @@
-package com.github.chenfeikun.raft;
+package com.github.chenfeikun.raft.consensus;
 
 import com.github.chenfeikun.raft.entity.EntriesParam;
 import com.github.chenfeikun.raft.entity.EntriesResult;

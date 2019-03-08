@@ -98,4 +98,14 @@ public class VoteParam {
     public void setLastLogTerm(long lastLogTerm) {
         this.lastLogTerm = lastLogTerm;
     }
+
+    @Override
+    public String toString() {
+        return "VoteParam{" +
+                "term=" + term +
+                ", candidateId=" + candidateId +
+                ", lastLogIndex=" + lastLogIndex +
+                ", lastLogTerm=" + lastLogTerm +
+                '}';
+    }
 }

@@ -63,4 +63,12 @@ public class VoteResult {
     public void setVoteGranted(boolean voteGranted) {
         this.voteGranted = voteGranted;
     }
+
+    @Override
+    public String toString() {
+        return "VoteResult{" +
+                "term=" + term +
+                ", voteGranted=" + voteGranted +
+                '}';
+    }
 }
