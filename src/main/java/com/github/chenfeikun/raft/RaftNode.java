@@ -64,8 +64,8 @@ public class RaftNode implements Node{
     @Override
     public void init() {
         consensus = DefaultConsensus.getInstance();
-        stateMachine = new DefaultStateMachine();
-        logManage = new DefaultLogManage();
+        stateMachine = DefaultStateMachine.getInstance();
+        logManage = DefaultLogManage.getInstance();
     }
 
     @Override

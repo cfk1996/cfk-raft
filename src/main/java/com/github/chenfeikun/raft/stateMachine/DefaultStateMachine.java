@@ -9,6 +9,17 @@ import com.github.chenfeikun.raft.logModule.LogEntry;
  */
 public class DefaultStateMachine implements StateMachine {
 
+
+    private DefaultStateMachine() {}
+
+    public static final DefaultStateMachine getInstance() {
+        return DefaultStateMachineLazyHolder.INSTANCE;
+    }
+
+    private static final class DefaultStateMachineLazyHolder {
+        private static final DefaultStateMachine INSTANCE = new DefaultStateMachine();
+    }
+
     @Override
     public void apply(LogEntry entry) {
 

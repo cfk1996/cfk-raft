@@ -22,7 +22,7 @@ public class DefaultLogManage implements LogManage {
     }
 
     public static final DefaultLogManage getInstance() {
-
+        return DefaultLogManageLazyHolder.INSTANCE;
 
     }
 
