@@ -8,4 +8,6 @@ package com.github.chenfeikun.raft.rpc;
 public interface RpcClient {
 
     Response invoke(Request request);
+
+    Response invoke(Request request, int timeoutMills);
 }

@@ -1,5 +1,10 @@
 package com.github.chenfeikun.raft;
 
+import com.github.chenfeikun.raft.entity.EntriesParam;
+import com.github.chenfeikun.raft.entity.EntriesResult;
+import com.github.chenfeikun.raft.entity.VoteParam;
+import com.github.chenfeikun.raft.entity.VoteResult;
+
 /**
  * @desciption: Node
  * @CreateTime: 2019-03-08
@@ -7,9 +12,9 @@ package com.github.chenfeikun.raft;
  */
 public interface Node extends LifeCycle{
 
-    void handleRequestVote();
+    VoteResult handleRequestVote(VoteParam param);
 
-    void handleAppendEntries();
+    EntriesResult handleAppendEntries(EntriesParam param);
 
     void handlerClientRequest();
 

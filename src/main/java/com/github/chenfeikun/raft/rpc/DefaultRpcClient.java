@@ -25,10 +25,24 @@ public class DefaultRpcClient implements RpcClient {
         try {
             response = (Response) CLIENT.invokeSync(request.getUrl(), request, 20000);
         } catch (RemotingException e) {
-            LOG.error("rpc remoting exception; request" + request);
+            LOG.error("rpc remoting exception; request = " + request.getType() + "," + request.getUrl());
             throw new RaftRemotingException(e);
         } catch (InterruptedException e) {
-            LOG.error("rpc interrupt exception; request = " + request);
+            LOG.error("rpc interrupt exception; request = " + request.getType() + ", " + request.getUrl());
+        }
+        return response;
+    }
+
+    @Override
+    public Response invoke(Request request, int timeoutMills) {
+        Response response = null;
+        try {
+            response = (Response) CLIENT.invokeSync(request.getUrl(), request, timeoutMills);
+        } catch (RemotingException e) {
+            LOG.error("rpc remoting exception; request = " + request.getType() + "," + request.getUrl());
+            throw new RaftRemotingException(e);
+        } catch (InterruptedException e) {
+            LOG.error("rpc interrupt exception; request = " + request.getType() + ", " + request.getUrl());
         }
         return response;
     }

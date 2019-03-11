@@ -31,22 +31,22 @@ public class DefaultLogManage implements LogManage {
     }
 
     @Override
-    public void write(LogEntry logEntry) {
-
+    public synchronized void write(LogEntry logEntry) {
+        logEntries.add(logEntry);
     }
 
     @Override
     public LogEntry read(int index) {
-        return null;
+        return logEntries.get(index);
     }
 
     @Override
     public int getLastIndex() {
-        return 0;
+        return logEntries.size()-1;
     }
 
     @Override
     public LogEntry getLastEntry() {
-        return null;
+        return logEntries.get(logEntries.size()-1);
     }
 }
