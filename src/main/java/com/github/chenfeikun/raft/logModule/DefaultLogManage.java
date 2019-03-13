@@ -32,6 +32,7 @@ public class DefaultLogManage implements LogManage {
 
     @Override
     public synchronized void write(LogEntry logEntry) {
+        logEntry.setIndex(logEntries.size());
         logEntries.add(logEntry);
     }
 

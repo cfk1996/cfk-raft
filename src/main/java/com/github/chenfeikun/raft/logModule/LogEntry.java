@@ -10,6 +10,7 @@ public class LogEntry {
 
     private long term;
     private String cmd;
+    private int index;
 
     public LogEntry(long term, String cmd) {
         this.term = term;
@@ -22,5 +23,13 @@ public class LogEntry {
 
     public String getCmd() {
         return cmd;
+    }
+
+    public int getIndex() {
+        return index;
+    }
+
+    public void setIndex(int index) {
+        this.index = index;
     }
 }

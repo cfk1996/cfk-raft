@@ -1,11 +1,13 @@
 package com.github.chenfeikun.raft.entity;
 
+import java.io.Serializable;
+
 /**
  * @desciption: VoteResult
  * @CreateTime: 2019-03-07
  * @author: chenfeikun
  */
-public class VoteResult {
+public class VoteResult implements Serializable {
 
     // term of response server
     private long term;

@@ -1,11 +1,13 @@
 package com.github.chenfeikun.raft.rpc;
 
+import java.io.Serializable;
+
 /**
  * @desciption: Response
  * @CreateTime: 2019-03-09
  * @author: chenfeikun
  */
-public class Response<T> {
+public class Response<T> implements Serializable {
 
     private T result;
 

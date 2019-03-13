@@ -13,6 +13,7 @@ import com.github.chenfeikun.raft.stateMachine.DefaultStateMachine;
 import com.github.chenfeikun.raft.stateMachine.StateMachine;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import sun.rmi.runtime.Log;
 
 import java.util.*;
 import java.util.concurrent.*;
@@ -96,6 +97,9 @@ public class RaftNode implements Node{
     private long preElectionTime;
     private long preAppendEntriesTime;
 
+    // 随机数
+    private final Random random = new Random();
+
     public RaftNode(Server[] servers, Server localServer) {
         currentTerm = new AtomicLong(0);
         voteFor = null;
@@ -103,8 +107,6 @@ public class RaftNode implements Node{
         lastApplied = 0;
         this.localServer = localServer;
         this.peerSet = new Peer(servers, localServer);
-        nextIndex = new ConcurrentHashMap<>(servers.length); // only leader need
-        matchIndex = new ConcurrentHashMap<>(servers.length); // Only leader need
         state  = State.FOLLEWER; // initial at follower
     }
 
@@ -121,14 +123,14 @@ public class RaftNode implements Node{
             consensus = DefaultConsensus.getInstance();
             stateMachine = DefaultStateMachine.getInstance();
             logManage = DefaultLogManage.getInstance();
+            raftExecutor = new RaftExecutor();
             rpcClient = new DefaultRpcClient();
             rpcServer = new DefaultRpcServer(localServer.getPort(), this);
             rpcServer.start();
             // initial rpc tasks and schedule them in thread pool
             appendEntriesTask = new AppendEntriesTask();
             electionTask = new ElectionTask();
-            raftExecutor = new RaftExecutor();
-            raftExecutor.executeAppendEntries(appendEntriesTask, 0, 500, TimeUnit.MILLISECONDS);
+            raftExecutor.executeAppendEntries(appendEntriesTask, 0, 600, TimeUnit.MILLISECONDS);
             raftExecutor.executeEletion(electionTask, 6000, 500, TimeUnit.MILLISECONDS);
         }
 
@@ -145,7 +147,11 @@ public class RaftNode implements Node{
 
     @Override
     public VoteResult handleRequestVote(VoteParam param) {
-        return null;
+        VoteResult result;
+        if (param.getTerm() < currentTerm.get()) {
+            return new VoteResult(currentTerm.get(), false);
+        }
+        param.
     }
 
     @Override
@@ -167,6 +173,8 @@ public class RaftNode implements Node{
      * init nextIndex and matchIndex after localServer selected as leader
      */
     private void preBecomeLeader() {
+        nextIndex = new ConcurrentHashMap<>(peerSet.getServerSize());
+        matchIndex = new ConcurrentHashMap<>(peerSet.getServerSize());
         List<Server> otherServers = peerSet.getServerListExceptLocal();
         int lastIndex = logManage.getLastIndex();
         for (Server s : otherServers) {
@@ -176,16 +184,16 @@ public class RaftNode implements Node{
     }
 
     /**
-     * send empty append rpc to other server after localServer selected as leader
+     * send empty append rpc to other server after localServer selected as leader,
+     * only called at most one time immediately after selected as leader
      */
     public void sendHeartBeat() {
         List<Server> otherServers = peerSet.getServerListExceptLocal();
+        // 心跳rpc时，减少数据传输量
         EntriesParam entriesParam = EntriesParam.newBuilder()
                 .term(currentTerm.get())
                 .leaderId(localServer.getServerId())
-                .prevLogIndex(logManage.getLastIndex())
-                .prevLogTerm(logManage.getLastEntry().getTerm())
-                .entries(null)
+                .entry(null)
                 .leaderCommit(commitIndex)
                 .build();
         for (Server s : otherServers) {
@@ -196,19 +204,103 @@ public class RaftNode implements Node{
                         .obj(entriesParam)
                         .build();
                 try {
-                    Response<EntriesResult> response = rpcClient.invoke(request);
+                    Response<EntriesResult> response = rpcClient.invoke(request, HEART_BEAT_TIMEOUT);
+                    if (response ==null) {
+                        LOG.info("First:get null response, url = " + request.getUrl());
+                        return;
+                    }
                     long term = response.getResult().getTerm();
                     if (term > currentTerm.get()) {
-                        currentTerm.set(term);
-                        state = State.FOLLEWER;
-                        voteFor = null;
-                        LOG.info("leader term is expire, url = " + s.getUrl());
+                        leaderToFollower(request.getUrl(), term);
                     }
                 } catch (Exception e) {
-                    LOG.error("send heartbeat error, url = " + s.getUrl());
+                    LOG.error("First:send heartbeat error, url = " + s.getUrl());
                 }
             });
         }
+    }
+
+    /**
+     * send heartbeat when there is no new log to append
+     * @param request
+     */
+    private void sendHeartBeat(Request<EntriesParam> request) {
+        try{
+            Response<EntriesResult> response = rpcClient.invoke(request, HEART_BEAT_TIMEOUT);
+            if (response == null) {
+                LOG.info("send heart beat , no response. url = " + request.getUrl());
+                return;
+            }
+            long term = response.getResult().getTerm();
+            if (term > currentTerm.get()) {
+                leaderToFollower(request.getUrl(), term);
+            }
+        } catch (Exception e) {
+            LOG.error("send heart beat error, url = " + request.getUrl());
+        }
+    }
+
+    private void leaderToFollower(String url, long term) {
+        LOG.info("leader term is expire, url = " + url + ", leader term = "
+                + currentTerm.get() + ", new term = " + term);
+        currentTerm.set(term);
+        state = State.FOLLEWER;
+        voteFor = null;
+    }
+
+    private void sendAppendRpc() {
+        List<Server> servers = peerSet.getServerListExceptLocal();
+        for (Server s : servers) {
+            EntriesParam.Builder builder = EntriesParam.newBuilder();
+            // 设置所有请求相同的参数
+            builder.term(currentTerm.get()).leaderId(localServer.getServerId()).leaderCommit(commitIndex);
+            // 不同的参数
+            LogEntry logEntry = logManage.read(nextIndex.get(s)-1);
+            // 如果还没有日志或者没有新日志，当成心跳发送
+            Request<EntriesParam> request;
+            if (logEntry == LogEntry.ZERO_LOG || matchIndex.get(s).equals(nextIndex.get(s))) {
+                request = Request.<EntriesParam>newBuilder()
+                        .type(Request.A_ENTRIES)
+                        .obj(builder.build())
+                        .url(s.getUrl())
+                        .build();
+                sendHeartBeat(request);
+            } else { // leader已经有日志信息
+                int prevLogIndex = logEntry.getIndex() - 1;
+                long prevLogTerm = logManage.read(prevLogIndex).getTerm();
+                builder.prevLogIndex(prevLogIndex).prevLogTerm(prevLogTerm).entry(logEntry);
+                request = Request.<EntriesParam>newBuilder()
+                        .type(Request.A_ENTRIES)
+                        .obj(builder.build())
+                        .url(s.getUrl()).build();
+                replicateLog(request, s);
+            }
+        }
+    }
+
+    private void replicateLog(Request<EntriesParam> request, Server s) {
+         try {
+             Response<EntriesResult> response = rpcClient.invoke(request, HEART_BEAT_TIMEOUT);
+             if (response == null) {
+                 LOG.error("append rpc error, url = " + request.getUrl());
+                 return;
+             }
+             EntriesResult result = response.getResult();
+             if (result.getTerm() > currentTerm.get()) {
+                 leaderToFollower(request.getUrl(), result.getTerm());
+                 return;
+             }
+             if (result.isSuccess()) {
+                 nextIndex.put(s, nextIndex.get(s)+1);
+                 if (request.getObj().getEntry().getIndex() > matchIndex.get(s)) {
+                     matchIndex.put(s, request.getObj().getEntry().getIndex());
+                 }
+             } else {
+                 nextIndex.put(s, nextIndex.get(s)-1);
+             }
+         } catch (Exception e) {
+             LOG.error("replicate log error: url = " + s.getUrl());
+         }
     }
 
     /**
@@ -220,7 +312,12 @@ public class RaftNode implements Node{
             if (state != State.LEADER) {
                 return;
             }
-
+            if (System.currentTimeMillis() - preAppendEntriesTime < HEART_BEAT_TIMEOUT+100) {
+                return;
+            }
+            preAppendEntriesTime = System.currentTimeMillis();
+            preElectionTime = System.currentTimeMillis() + random.nextInt(ELECTION_RANDOM_TIME);
+            sendAppendRpc();
         }
     }
 
@@ -236,7 +333,6 @@ public class RaftNode implements Node{
             if (System.currentTimeMillis() - preAppendEntriesTime < ELECTION_BASE_TIME) {
                 return;
             }
-            Random random = new Random();
             try {
                 preAppendEntriesTime = System.currentTimeMillis() + random.nextInt(ELECTION_RANDOM_TIME);
                 sendVote();
@@ -287,8 +383,9 @@ public class RaftNode implements Node{
                             return;
                         }
                         if (response.getResult().getTerm() > currentTerm.get()) {
-                            currentTerm.set(response.getResult().getTerm());
-                            voteFor = null;
+//                            currentTerm.set(response.getResult().getTerm());
+//                            voteFor = null;
+                            leaderToFollower("none url", response.getResult().getTerm());
                             return;
                         }
                         if (response.getResult().isVoteGranted()) {

@@ -2,7 +2,9 @@ package com.github.chenfeikun.raft.entity;
 
 import com.github.chenfeikun.raft.logModule.LogEntry;
 
+import java.io.Serializable;
 import java.util.Arrays;
+import java.util.List;
 
 /**
  * @desciption: EntriesParam
@@ -10,7 +12,7 @@ import java.util.Arrays;
  * @CreateTime: 2019-03-07
  * @author: chenfeikun
  */
-public class EntriesParam {
+public class EntriesParam implements Serializable {
 
     private long term;
     // leader's server id, followers use it to redirect
@@ -20,7 +22,7 @@ public class EntriesParam {
     // term of prev log
     private long prevLogTerm;
     // log entries to append
-    private LogEntry[] entries;
+    private LogEntry entry;
     // commit index of leader
     private int leaderCommit;
 
@@ -29,7 +31,7 @@ public class EntriesParam {
         setLeaderId(builder.leaderId);
         setPrevLogIndex(builder.prevLogIndex);
         setPrevLogTerm(builder.term);
-        setEntries(builder.entries);
+        setEntry(builder.entry);
         setLeaderCommit(builder.leaderCommit);
     }
 
@@ -42,7 +44,7 @@ public class EntriesParam {
         private int leaderId;
         private int prevLogIndex;
         private long prevLogTerm;
-        private LogEntry[] entries;
+        private LogEntry entry;
         private int leaderCommit;
 
         private Builder() {}
@@ -67,8 +69,8 @@ public class EntriesParam {
             return this;
         }
 
-        public Builder entries(LogEntry[] entries) {
-            this.entries = entries;
+        public Builder entry(LogEntry logEntry) {
+            this.entry = logEntry;
             return this;
         }
 
@@ -115,12 +117,12 @@ public class EntriesParam {
         this.prevLogTerm = prevLogTerm;
     }
 
-    public LogEntry[] getEntries() {
-        return entries;
+    public LogEntry getEntry() {
+        return entry;
     }
 
-    public void setEntries(LogEntry[] entries) {
-        this.entries = entries;
+    public void setEntry(LogEntry entry) {
+        this.entry = entry;
     }
 
     public int getLeaderCommit() {
@@ -138,7 +140,7 @@ public class EntriesParam {
                 ", leaderId=" + leaderId +
                 ", prevLogIndex=" + prevLogIndex +
                 ", prevLogTerm=" + prevLogTerm +
-                ", entries=" + Arrays.toString(entries) +
+                ", entry=" + entry +
                 ", leaderCommit=" + leaderCommit +
                 '}';
     }

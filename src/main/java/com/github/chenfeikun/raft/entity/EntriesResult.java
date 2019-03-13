@@ -1,11 +1,13 @@
 package com.github.chenfeikun.raft.entity;
 
+import java.io.Serializable;
+
 /**
  * @desciption: EntriesResult
  * @CreateTime: 2019-03-07
  * @author: chenfeikun
  */
-public class EntriesResult {
+public class EntriesResult implements Serializable {
 
     // term of follower
     private long term;

@@ -1,11 +1,13 @@
 package com.github.chenfeikun.raft.entity;
 
+import java.io.Serializable;
+
 /**
  * @desciption: VoteParam
  * @CreateTime: 2019-03-07
  * @author: chenfeikun
  */
-public class VoteParam {
+public class VoteParam implements Serializable {
 
     private long term;
     // follower's server id
