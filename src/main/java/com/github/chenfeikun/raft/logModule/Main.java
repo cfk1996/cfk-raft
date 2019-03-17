@@ -10,14 +10,6 @@ import org.omg.Messaging.SYNC_WITH_TRANSPORT;
 public class Main {
 
     public static void main(String[] args) {
-        LogManage logManage = DefaultLogManage.getInstance();
-        LogEntry logEntry = new LogEntry(1, "s");
-        logManage.write(logEntry);
-        LogEntry entry = logManage.read(0);
-        if (entry == LogEntry.ZERO_LOG) {
-            System.out.println("the same");
-        } else {
-            System.out.println("not same");
-        }
+
     }
 }

@@ -36,6 +36,10 @@ public class DefaultLogManage implements LogManage {
         logEntries.add(logEntry);
     }
 
+    public void removeToEnd(int index) {
+
+    }
+
     @Override
     public LogEntry read(int index) {
         return logEntries.get(index);

@@ -19,6 +19,7 @@ import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.locks.ReentrantLock;
 
 /**
  * @desciption: RaftNode
@@ -97,6 +98,8 @@ public class RaftNode implements Node{
     private long preElectionTime;
     private long preAppendEntriesTime;
 
+    // 锁
+    private ReentrantLock lock = new ReentrantLock();
     // 随机数
     private final Random random = new Random();
 
@@ -147,16 +150,85 @@ public class RaftNode implements Node{
 
     @Override
     public VoteResult handleRequestVote(VoteParam param) {
-        VoteResult result;
-        if (param.getTerm() < currentTerm.get()) {
-            return new VoteResult(currentTerm.get(), false);
+        LOG.info("handle vote request, candidate's term={},local's term={}", param.getTerm(), currentTerm.get());
+        try {
+            lock.lock();
+            // 候选者任期小于自己，直接拒绝
+            if (param.getTerm() < currentTerm.get()) {
+                return new VoteResult(currentTerm.get(), false);
+            }
+            // 修改本地term
+            currentTerm.set(param.getTerm());
+            // 当前任期已经投过票
+            if (voteFor != null) {
+                return new VoteResult(currentTerm.get(), false);
+            }
+            // 如果候选者的日志比本地的新，给它投票
+            if(param.getLastLogIndex() >= logManage.getLastIndex() &&
+               param.getTerm() >= logManage.getLastEntry().getTerm()) {
+                return new VoteResult(currentTerm.get(), true);
+            } else {
+                return new VoteResult(currentTerm.get(), false);
+            }
+        } finally {
+            lock.unlock();
         }
-        param.
+    }
+
+    private void resetTime() {
+        preAppendEntriesTime = System.currentTimeMillis();
+        preElectionTime = System.currentTimeMillis() + random.nextInt(ELECTION_RANDOM_TIME);
+    }
+
+    private void setDownTerm(long newTerm) {
+        if (currentTerm.get() >= newTerm) {
+            return;
+        }
+        currentTerm.set(newTerm);
+        voteFor = null;
+        state = State.FOLLEWER;
+        peerSet.setLeaderID(-1);
     }
 
     @Override
     public EntriesResult handleAppendEntries(EntriesParam param) {
-        return null;
+        LOG.info("handle append entries request, param's term={}, local's term={}", param.getTerm(), currentTerm.get());
+        resetTime();
+        try {
+            lock.lock();
+            // 请求任期小于本地，直接拒绝
+            if (param.getTerm() < currentTerm.get()) {
+                return new EntriesResult(currentTerm.get(), false);
+            }
+            // 重置本地term
+            currentTerm.set(param.getTerm());
+            // 如果没有leader
+            if (peerSet.getLeaderID() == -1) {
+                LOG.info("new leader server, id = {}, term = {}", param.getLeaderId(), param.getTerm());
+                peerSet.setLeaderID(param.getLeaderId());
+            }
+            // 如果server与本地Leader不同
+            if (param.getLeaderId() != peerSet.getLeaderID()) {
+                setDownTerm(param.getTerm()+1);
+                return new EntriesResult(currentTerm.get(), false);
+            }
+            // 如果自己不存在与prevLogIndex相匹配的日志，返回false
+            if (param.getPrevLogIndex() > logManage.getLastIndex()) {
+                return new EntriesResult(currentTerm.get(), false);
+            }
+            if (param.getPrevLogTerm() != logManage.read(param.getPrevLogIndex()).getTerm()) {
+                logManage.removeToEnd(param.getPrevLogIndex());
+                return new EntriesResult(currentTerm.get(), false);
+            }
+            // 本地日志和Leader匹配，执行append操作
+            logManage.write(param.getEntry());
+            if (param.getLeaderCommit() > commitIndex) {
+                commitIndex = Math.min(param.getLeaderCommit(), logManage.getLastIndex())
+            }
+            stateMachine.apply();
+        } finally {
+            lock.unlock();
+        }
     }
 
     @Override
@@ -243,9 +315,15 @@ public class RaftNode implements Node{
     private void leaderToFollower(String url, long term) {
         LOG.info("leader term is expire, url = " + url + ", leader term = "
                 + currentTerm.get() + ", new term = " + term);
-        currentTerm.set(term);
-        state = State.FOLLEWER;
-        voteFor = null;
+        try {
+            lock.lock();
+            currentTerm.set(term);
+            state = State.FOLLEWER;
+            voteFor = null;
+        } finally {
+            lock.unlock();
+        }
+
     }
 
     private void sendAppendRpc() {
@@ -315,8 +393,7 @@ public class RaftNode implements Node{
             if (System.currentTimeMillis() - preAppendEntriesTime < HEART_BEAT_TIMEOUT+100) {
                 return;
             }
-            preAppendEntriesTime = System.currentTimeMillis();
-            preElectionTime = System.currentTimeMillis() + random.nextInt(ELECTION_RANDOM_TIME);
+            resetTime();
             sendAppendRpc();
         }
     }
@@ -343,9 +420,14 @@ public class RaftNode implements Node{
 
         public void sendVote() {
             // modify the node state before send vote request
-            currentTerm.getAndIncrement();
-            state = State.CANDIDATE;
-            voteFor = localServer.getServerId();
+            try {
+                lock.lock();
+                currentTerm.getAndIncrement();
+                state = State.CANDIDATE;
+                voteFor = localServer.getServerId();
+            } finally {
+                lock.unlock();
+            }
 
             // send vote request in parallel, and put the result in future lists
             List<Future<Response<VoteResult>>> futures = new ArrayList<>(peerSet.getServerSizeWithoutLocal());
@@ -411,7 +493,13 @@ public class RaftNode implements Node{
             if (success.get() >= peerSet.getServerSize() / 2 + 1) {
                 LOG.info(localServer.getUrl() + "become leader");
                 preBecomeLeader();
-                state = State.LEADER;
+                try {
+                    lock.lock();
+                    state = State.LEADER;
+                    peerSet.setLeaderID(localServer.getServerId());
+                } finally {
+                    lock.unlock();
+                }
                 sendHeartBeat();
             }
         }

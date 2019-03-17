@@ -16,4 +16,10 @@ public interface LogManage {
     int getLastIndex();
 
     LogEntry getLastEntry();
+
+    /**
+     * 日志不匹配时，删除prevLogIndex及之后的日志
+     * @param index　prevLogIndex
+     */
+    void removeToEnd(int index);
 }

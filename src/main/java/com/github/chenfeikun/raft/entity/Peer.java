@@ -22,7 +22,7 @@ public class Peer {
     private Integer localID;
     private Server localServer;
     // leader服务器
-    private Server leaderServer;
+    private Integer leaderID;
 
     public Peer(Server[] servers, Server localServer) {
         for (Server s : servers) {
@@ -33,6 +33,7 @@ public class Peer {
         }
         this.localID = localServer.getServerId();
         this.localServer = localServer;
+        leaderID = -1;
     }
 
     public void addServer(Server server) {
@@ -73,14 +74,10 @@ public class Peer {
     }
 
     public Integer getLeaderID() {
-        return leaderServer != null ? leaderServer.getServerId() : null;
+        return leaderID;
     }
 
-    public Server getLeaderServer() {
-        return leaderServer;
-    }
-
-    public void setLeaderServer(Server leaderServer) {
-        this.leaderServer = leaderServer;
+    public void setLeaderID(Integer leaderID) {
+        this.leaderID = leaderID;
     }
 }
