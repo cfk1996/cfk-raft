@@ -5,9 +5,9 @@ package com.github.chenfeikun.raft;
  * @CreateTime: 2019-03-08
  * @author: chenfeikun
  */
-public interface LifeCycle {
+public interface LifeCycle<T> {
 
-    void init();
+    boolean init(T config);
 
-    void destory();
+    void shutdown();
 }

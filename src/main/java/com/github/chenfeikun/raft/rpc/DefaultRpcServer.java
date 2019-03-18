@@ -1,7 +1,6 @@
 package com.github.chenfeikun.raft.rpc;
 
 import com.alipay.remoting.BizContext;
-import com.github.chenfeikun.raft.RaftNode;
 import com.github.chenfeikun.raft.entity.EntriesParam;
 import com.github.chenfeikun.raft.entity.VoteParam;
 
@@ -45,9 +44,9 @@ public class DefaultRpcServer implements RpcServer {
 //        } else if (request.getType() == Request.CLIENT_REQ) {
 //            return new Response(raftNode.handlerClientRequest((ClientKVReq) request.getObj()));
 //        } else if (request.getType() == Request.CHANGE_CONFIG_REMOVE) {
-//            return new Response(((ClusterMembershipChanges) raftNode).removePeer((Peer) request.getObj()));
+//            return new Response(((ClusterMembershipChanges) raftNode).removePeer((PeerId) request.getObj()));
 //        } else if (request.getType() == Request.CHANGE_CONFIG_ADD) {
-//            return new Response(((ClusterMembershipChanges) raftNode).addPeer((Peer) request.getObj()));
+//            return new Response(((ClusterMembershipChanges) raftNode).addPeer((PeerId) request.getObj()));
 //        }
         }
         return null;

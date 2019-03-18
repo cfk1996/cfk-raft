@@ -1,22 +1,29 @@
 package com.github.chenfeikun.raft;
 
-import com.github.chenfeikun.raft.entity.EntriesParam;
-import com.github.chenfeikun.raft.entity.EntriesResult;
-import com.github.chenfeikun.raft.entity.VoteParam;
-import com.github.chenfeikun.raft.entity.VoteResult;
+import com.github.chenfeikun.raft.options.NodeOptions;
+import com.github.chenfeikun.raft.entity.PeerId;
+import com.github.chenfeikun.raft.entity.Task;
 
 /**
  * @desciption: Node
  * @CreateTime: 2019-03-08
  * @author: chenfeikun
  */
-public interface Node extends LifeCycle{
+public interface Node extends LifeCycle<NodeOptions>{
 
-    VoteResult handleRequestVote(VoteParam param);
+    /**
+     * 将任务应用到复制状态机
+     * @param task
+     */
+    void apply(Task task);
 
-    EntriesResult handleAppendEntries(EntriesParam param);
+    /**
+     * get leader's peerid
+     * @return
+     */
+    PeerId getLeaderID();
 
-    void handlerClientRequest();
+    void join();
 
-    void redirect();
+    void snapshot(Closure done);
 }
