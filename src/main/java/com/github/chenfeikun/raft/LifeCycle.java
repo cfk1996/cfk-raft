@@ -2,12 +2,12 @@ package com.github.chenfeikun.raft;
 
 /**
  * @desciption: LifeCycle
- * @CreateTime: 2019-03-08
+ * @CreateTime: 2019-03-18
  * @author: chenfeikun
  */
-public interface LifeCycle<T> {
+public interface LifeCycle {
 
-    boolean init(T config);
+    void startup();
 
     void shutdown();
 }
