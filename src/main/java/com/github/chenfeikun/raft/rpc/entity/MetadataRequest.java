@@ -5,5 +5,5 @@ package com.github.chenfeikun.raft.rpc.entity;
  * @CreateTime: 2019-03-18
  * @author: chenfeikun
  */
-public class MetadataRequest {
+public class MetadataRequest extends RequestOrResponse {
 }

@@ -5,5 +5,15 @@ package com.github.chenfeikun.raft.rpc.entity;
  * @CreateTime: 2019-03-18
  * @author: chenfeikun
  */
-public class AppendEntryRequest {
+public class AppendEntryRequest extends RequestOrResponse {
+
+    private byte[] body;
+
+    public byte[] getBody() {
+        return body;
+    }
+
+    public void setBody(byte[] body) {
+        this.body = body;
+    }
 }

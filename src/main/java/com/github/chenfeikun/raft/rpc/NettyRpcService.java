@@ -16,6 +16,8 @@ import com.github.chenfeikun.raft.rpc.entity.PullEntriesResponse;
 import com.github.chenfeikun.raft.rpc.entity.PushEntryRequest;
 import com.github.chenfeikun.raft.rpc.entity.PushEntryResponse;
 import com.github.chenfeikun.raft.rpc.entity.RequestCode;
+import com.github.chenfeikun.raft.rpc.entity.RequestOrResponse;
+import com.github.chenfeikun.raft.rpc.entity.ResponseCode;
 import com.github.chenfeikun.raft.rpc.entity.VoteRequest;
 import com.github.chenfeikun.raft.rpc.entity.VoteResponse;
 import io.netty.channel.ChannelHandlerContext;
@@ -29,6 +31,10 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ThreadFactory;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * @desciption: NettyRpcService
@@ -40,15 +46,24 @@ public class NettyRpcService extends RpcService {
     private static final Logger LOG = LoggerFactory.getLogger(NettyRpcService.class);
 
     /** raft*/
-    private NodeServer server;
+    private NodeServer nodeServer;
     private MemberState memberState;
     /** rpc*/
     private NettyRemotingServer remotingServer;
     private NettyRemotingClient remotingClient;
 
+    /** executor*/
+    private ExecutorService futureExecutor = Executors.newFixedThreadPool(4, new ThreadFactory() {
+        private AtomicInteger threadIndex = new AtomicInteger(0);
+
+        @Override
+        public Thread newThread(Runnable r) {
+            return new Thread(r, "FutureExecutor_" + this.threadIndex.incrementAndGet());
+        }
+    });
 
     public NettyRpcService(NodeServer server) {
-        this.server = server;
+        this.nodeServer = server;
         this.memberState = server.getMemberState();
         startServer();
         // start remoting client
@@ -90,34 +105,92 @@ public class NettyRpcService extends RpcService {
         this.remotingClient = new NettyRemotingClient(new NettyClientConfig(), null);
     }
 
-    private void writeResponse() {}
+    public RemotingCommand handleResponse(RequestOrResponse body, RemotingCommand request) {
+        RemotingCommand remotingCommand = RemotingCommand.createResponseCommand(ResponseCode.SUCCESS.getCode(), null);
+        remotingCommand.setBody(JSON.toJSONBytes(body));
+        remotingCommand.setOpaque(request.getOpaque());
+        return remotingCommand;
+    }
+
+    private void writeResponse(RequestOrResponse body, Throwable t, RemotingCommand request, ChannelHandlerContext ctx) {
+        RemotingCommand response = null;
+        try {
+            if (t != null) {
+                throw t;
+            } else {
+                response = handleResponse(body, request);
+                response.markResponseType();
+                ctx.writeAndFlush(response);
+            }
+        } catch (Throwable e) {
+            LOG.error("Process request over, but failed to get response. Request={},Response={}", request, response);
+        }
+    }
 
     private RemotingCommand processRequest(ChannelHandlerContext ctx, RemotingCommand request) throws Exception {
         RequestCode code = RequestCode.valueOf(request.getCode());
         switch (code) {
-            case UNKNOWN:
-                break;
             case METADATA: {
-                MetadataRequest metaDataRequest = JSON.parseObject(request.getBody(), MetadataRequest.class);
-                CompletableFuture<MetadataResponse> future = handleMetadata(metaDataRequest);
+                MetadataRequest metadataRequest = JSON.parseObject(request.getBody(), MetadataRequest.class);
+                CompletableFuture<MetadataResponse> future = handleMetadata(metadataRequest);
                 future.whenCompleteAsync((x, y) -> {
                     writeResponse(x, y, request, ctx);
                 }, futureExecutor);
                 break;
             }
-            case APPEND:
+            case APPEND: {
+                AppendEntryRequest appendEntryRequest = JSON.parseObject(request.getBody(), AppendEntryRequest.class);
+                CompletableFuture<AppendEntryResponse> future = handleAppend(appendEntryRequest);
+                future.whenCompleteAsync((x, y) -> {
+                    writeResponse(x, y, request, ctx);
+                }, futureExecutor);
                 break;
-            case GET:
+            }
+            case GET: {
+                GetEntriesRequest getEntriesRequest = JSON.parseObject(request.getBody(), GetEntriesRequest.class);
+                CompletableFuture<GetEntriesResponse> future = handleGet(getEntriesRequest);
+                future.whenCompleteAsync((x, y) -> {
+                    writeResponse(x, y, request, ctx);
+                }, futureExecutor);
                 break;
-            case VOTE:
+            }
+            case PULL: {
+                PullEntriesRequest pullEntriesRequest = JSON.parseObject(request.getBody(), PullEntriesRequest.class);
+                CompletableFuture<PullEntriesResponse> future = handlePull(pullEntriesRequest);
+                future.whenCompleteAsync((x, y) -> {
+                    writeResponse(x, y, request, ctx);
+                }, futureExecutor);
                 break;
-            case HEART_BEAT:
+            }
+            case PUSH: {
+                PushEntryRequest pushEntryRequest = JSON.parseObject(request.getBody(), PushEntryRequest.class);
+                CompletableFuture<PushEntryResponse> future = handlePush(pushEntryRequest);
+                future.whenCompleteAsync((x, y) -> {
+                    writeResponse(x, y, request, ctx);
+                }, futureExecutor);
                 break;
-            case PULL:
+            }
+            case VOTE: {
+                VoteRequest voteRequest = JSON.parseObject(request.getBody(), VoteRequest.class);
+                CompletableFuture<VoteResponse> future = handleVote(voteRequest);
+                future.whenCompleteAsync((x, y) -> {
+                    writeResponse(x, y, request, ctx);
+                }, futureExecutor);
                 break;
-            case PUSH:
+            }
+            case HEART_BEAT: {
+                HeartBeatRequest heartBeatRequest = JSON.parseObject(request.getBody(), HeartBeatRequest.class);
+                CompletableFuture<HeartBeatResponse> future = handleHeartBeat(heartBeatRequest);
+                future.whenCompleteAsync((x, y) -> {
+                    writeResponse(x, y, request, ctx);
+                }, futureExecutor);
+                break;
+            }
+            default:
+                LOG.error("Unknown request code {} from {}", request.getCode(), request);
                 break;
         }
+        return null;
     }
 
     @Override
@@ -142,27 +215,27 @@ public class NettyRpcService extends RpcService {
 
     @Override
     public CompletableFuture<VoteResponse> handleVote(VoteRequest request) throws Exception {
-        return null;
+        return nodeServer.handleVote(request);
     }
 
     @Override
     public CompletableFuture<HeartBeatResponse> handleHeartBeat(HeartBeatRequest request) throws Exception {
-        return null;
+        return nodeServer.handleHeartBeat(request);
     }
 
     @Override
     public CompletableFuture<PullEntriesResponse> handlePull(PullEntriesRequest request) throws Exception {
-        return null;
+        return nodeServer.handlePull(request);
     }
 
     @Override
     public CompletableFuture<PushEntryResponse> handlePush(PushEntryRequest request) throws Exception {
-        return null;
+        return nodeServer.handlePush(request);
     }
 
     @Override
     public CompletableFuture<GetEntriesResponse> get(GetEntriesRequest request) throws Exception {
-
+        return null;
     }
 
     @Override
@@ -177,17 +250,17 @@ public class NettyRpcService extends RpcService {
 
     @Override
     public CompletableFuture<AppendEntryResponse> handleAppend(AppendEntryRequest request) throws Exception {
-        return null;
+        return nodeServer.handleAppend(request);
     }
 
     @Override
     public CompletableFuture<GetEntriesResponse> handleGet(GetEntriesRequest request) throws Exception {
-        return null;
+        return nodeServer.handleGet(request);
     }
 
     @Override
     public CompletableFuture<MetadataResponse> handleMetadata(MetadataRequest request) throws Exception {
-        return null;
+        return nodeServer.handleMetadata(request);
     }
 
     @Override

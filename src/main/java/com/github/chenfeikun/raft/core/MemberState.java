@@ -5,7 +5,6 @@ import com.github.chenfeikun.raft.utils.IOUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import javax.imageio.IIOException;
 import java.io.File;
 import java.io.IOException;
 import java.util.Map;
@@ -35,6 +34,9 @@ public class MemberState {
     private String selfId;
     private String peers;
     private Map<String, String> peerMap;
+
+    private Role role = Role.CANDIDATE;
+    private String leaderId;
 
     public MemberState(NodeConfig config) {
         this.group = config.getGroup();
@@ -69,4 +71,70 @@ public class MemberState {
         return peerMap.get(selfId);
     }
 
+    public long getCurrTerm() {
+        return currTerm;
+    }
+
+    public void setCurrTerm(long currTerm) {
+        this.currTerm = currTerm;
+    }
+
+    public String getCurrVoteFor() {
+        return currVoteFor;
+    }
+
+    public void setCurrVoteFor(String currVoteFor) {
+        this.currVoteFor = currVoteFor;
+    }
+
+    public String getGroup() {
+        return group;
+    }
+
+    public void setGroup(String group) {
+        this.group = group;
+    }
+
+    public String getSelfId() {
+        return selfId;
+    }
+
+    public void setSelfId(String selfId) {
+        this.selfId = selfId;
+    }
+
+    public String getPeers() {
+        return peers;
+    }
+
+    public void setPeers(String peers) {
+        this.peers = peers;
+    }
+
+    public Map<String, String> getPeerMap() {
+        return peerMap;
+    }
+
+    public void setPeerMap(Map<String, String> peerMap) {
+        this.peerMap = peerMap;
+    }
+
+    public String getLeaderId() {
+        return leaderId;
+    }
+
+    public void setLeaderId(String leaderId) {
+        this.leaderId = leaderId;
+    }
+
+    public boolean isLeader() {
+        return role == Role.LEADER;
+    }
+
+    public enum Role {
+        UNKNOWN,
+        CANDIDATE,
+        LEADER,
+        FOLLOWER;
+    }
 }
