@@ -96,6 +96,11 @@ public class NodeServer implements LifeCycle, RaftProtocolHander {
                     "%s != %s", request.getCode(), memberState.getGroup());
             PreConditions.check(memberState.isLeader(), ResponseCode.NOT_LEADER);
             long currentTerm = memberState.getCurrTerm();
+            if (entryPusher.isPendingFull(currentTerm)) {
+
+            } else {
+
+            }
         }
     }
 
