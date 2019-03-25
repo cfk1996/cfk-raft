@@ -8,6 +8,8 @@ import com.github.chenfeikun.raft.rpc.entity.PushEntryRequest;
 import com.github.chenfeikun.raft.rpc.entity.PushEntryResponse;
 import com.github.chenfeikun.raft.rpc.entity.ResponseCode;
 import com.github.chenfeikun.raft.store.RaftStore;
+import com.github.chenfeikun.raft.store.file.MmapFileStore;
+import com.github.chenfeikun.raft.store.memory.MemoryStore;
 import com.github.chenfeikun.raft.utils.Pair;
 import com.github.chenfeikun.raft.utils.PreConditions;
 import com.github.chenfeikun.raft.utils.ShutdownableThread;
@@ -22,6 +24,7 @@ import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
 
@@ -67,6 +70,33 @@ public class EntryPusher implements LifeCycle {
     @Override
     public void shutdown() {
 
+    }
+
+    private void checkTermForWaterMark(long term, String msg) {
+        if (!peerWaterMarksByTerm.containsKey(term)) {
+            LOG.info("Initialize the watermark in {} for term={}", msg, term);
+            ConcurrentMap<String, Long> waterMarks = new ConcurrentHashMap<>();
+            for (String peer : memberState.getPeerMap().keySet()) {
+                waterMarks.put(peer, -1L);
+            }
+            peerWaterMarksByTerm.putIfAbsent(term, waterMarks);
+        }
+    }
+
+    private void updatePeerWaterMark(long term, String peerId, long index) {
+        synchronized (peerWaterMarksByTerm) {
+            checkTermForWaterMark(term, "update water mark");
+            if (peerWaterMarksByTerm.get(term).get(peerId) < index) {
+                peerWaterMarksByTerm.get(term).put(peerId, index);
+            }
+        }
+    }
+
+    private long getPeerWaterMark(long term, String peerId) {
+        synchronized (peerWaterMarksByTerm) {
+            checkTermForWaterMark(term, "getPeerWaterMark");
+            return peerWaterMarksByTerm.get(term).get(peerId);
+        }
     }
 
     /**
@@ -258,6 +288,10 @@ public class EntryPusher implements LifeCycle {
         private long term = -1;
         private String leaderId = null;
 
+        private long lastPushCommitTimeMs = -1;
+        private long lastCheckLeakTimeMs = System.currentTimeMillis();
+        private int maxPendingSize = 1000;
+
         public EntryDispatcher(String peerId, Logger logger) {
             super("EntryDispatcher-"+ memberState.getSelfId()+"-"+peerId, logger);
             this.peerId = peerId;
@@ -305,13 +339,6 @@ public class EntryPusher implements LifeCycle {
             type.set(target);
         }
 
-        private void updatePeerWaterMark(long term, String peerId, long index) {
-            synchronized (peerWaterMarksByTerm) {
-                checkTermForWaterMark(term, "update water mark");
-                if 
-            }
-        }
-
         @Override
         public void dowork() {
             try {
@@ -330,5 +357,217 @@ public class EntryPusher implements LifeCycle {
                 Utils.sleep(500);
             }
         }
+
+        private void doCompare() throws Exception {
+            while (true) {
+                if (!checkAndFreshState()) {
+                    break;
+                }
+                if (type.get() != PushEntryRequest.Type.COMPARE
+                    && type.get() != PushEntryRequest.Type.TRUNCATE) {
+                    break;
+                }
+                if (compareIndex == -1 && raftStore.getEndIndex() == -1) {
+                    break;
+                }
+                if (compareIndex == -1) {
+                    compareIndex = raftStore.getEndIndex();
+                    LOG.info("[Push-{}][DoCompare] compareIndex=-1 means start to compare", peerId);
+                } else if (compareIndex > raftStore.getEndIndex() || compareIndex < raftStore.getBeginIndex()) {
+                    LOG.info("[Push-{}][DoCompare] compareIndex={} out of range {}-{}", peerId, compareIndex,
+                            raftStore.getBeginIndex(), raftStore.getEndIndex());
+                    compareIndex = raftStore.getBeginIndex();
+                }
+
+                Entry entry = raftStore.get(compareIndex);
+                PreConditions.check(entry != null, ResponseCode.INTERNAL_ERROR, "compareIndex=%d", compareIndex);
+                PushEntryRequest request = buildPushRequest(entry, PushEntryRequest.Type.COMPARE);
+                CompletableFuture<PushEntryResponse> future = rpcService.push(request);
+                PushEntryResponse response = future.get(3, TimeUnit.SECONDS);
+                PreConditions.check(response != null, ResponseCode.INTERNAL_ERROR, "compareIndex=%d", compareIndex);
+                PreConditions.check(response.getCode() == ResponseCode.INCONSISTENT_STATE.getCode() ||
+                        response.getCode() == ResponseCode.SUCCESS.getCode(),
+                        ResponseCode.valueOf(response.getCode()), "compareIndex=%d", compareIndex);
+                long truncateIndex = -1;
+                if (response.getCode() == ResponseCode.SUCCESS.getCode()) {
+                    /*
+                     * The comparison is successful.
+                     * 1.just change to append state if the follower's end index is equal the compared index
+                     * 2.Truncate the follower if it has dirty entries
+                     */
+                    if (compareIndex == response.getEndIndex()) {
+                        changeState(compareIndex, PushEntryRequest.Type.APPEND);
+                        break;
+                    } else {
+                        truncateIndex = compareIndex;
+                    }
+                } else if (response.getEndIndex() < raftStore.getBeginIndex() ||
+                    response.getBeginIndex() > raftStore.getEndIndex()) {
+                    /*
+                     * The follower's entries dose not intersect with the leader.
+                     * This usually happens when follower has crashed for a long time while leader deleted its expired entries.
+                     * Just truncate the follower.
+                     */
+                    truncateIndex = raftStore.getBeginIndex();
+                } else if (compareIndex < response.getBeginIndex()) {
+                    truncateIndex = raftStore.getBeginIndex();
+                } else if (compareIndex > raftStore.getEndIndex()) {
+                    /*
+                    the compareIndex is bigger than follower's end index
+                    this is frequently because compareIndex is usually init at leader's end index.
+                     */
+                    compareIndex = raftStore.getBeginIndex();
+                } else {
+                    /*
+                    Compare failed and the index is in the follower'ss range.
+                    Decrease and retry.
+                     */
+                    compareIndex--;
+                }
+
+                if (compareIndex < raftStore.getBeginIndex()) {
+                    truncateIndex = raftStore.getBeginIndex();
+                }
+
+                if (truncateIndex != -1) {
+                    changeState(truncateIndex, PushEntryRequest.Type.TRUNCATE);
+                    doTruncate();
+                    break;
+                }
+
+            }
+        }
+
+        private void doAppend() throws Exception {
+            while (true) {
+                if (!checkAndFreshState()) {
+                    break;
+                }
+                if (type.get() != PushEntryRequest.Type.APPEND) {
+                    break;
+                }
+                if (writeIndex > raftStore.getEndIndex()) {
+                    doCommit();
+                    doCheckAppendResponse();
+                    break;
+                }
+                if (pendingMap.size() >= maxPendingSize || Utils.elapsed(lastCheckLeakTimeMs) > 1000) {
+                    long peerWaterMark = getPeerWaterMark(term, peerId);
+                    for (Long index : pendingMap.keySet()) {
+                        if (index < peerWaterMark) {
+                            pendingMap.remove(index);
+                        }
+                        lastCheckLeakTimeMs = System.currentTimeMillis();
+                    }
+                }
+                if (pendingMap.size() >= maxPendingSize) {
+                    doCheckAppendResponse();
+                    break;
+                }
+                doAppendInner(writeIndex);
+                writeIndex++;
+            }
+        }
+
+        private void doCheckAppendResponse() throws Exception {
+            long peerWaterMark = getPeerWaterMark(term, peerId);
+            Long sendTimeMs = pendingMap.get(peerWaterMark+1);
+            if (sendTimeMs != null && System.currentTimeMillis() - sendTimeMs > nodeConfig.getMaxPushTimeOutMs()) {
+                LOG.warn("[Push-{}]Retry to push entry at {}", peerId, peerWaterMark + 1);
+                doAppendInner(peerWaterMark+1);
+            }
+        }
+
+        private void checkQuotaAndWait(Entry entry) {
+            if (raftStore.getEndIndex() - entry.getIndex() <= maxPendingSize) {
+                return;
+            }
+            if (raftStore instanceof MemoryStore) {
+                return;
+            }
+            // TODO: MmapFileStore
+            throw new IllegalArgumentException("mmap file not support");
+        }
+
+        private void doAppendInner(long index) throws Exception {
+            Entry entry = raftStore.get(index);
+            PreConditions.check(entry != null, ResponseCode.UNKNOWN, "write index=%d", index);
+            checkQuotaAndWait(entry);
+            PushEntryRequest request = buildPushRequest(entry, PushEntryRequest.Type.APPEND);
+            CompletableFuture<PushEntryResponse> future = rpcService.push(request);
+            pendingMap.put(index, System.currentTimeMillis());
+            future.whenComplete((x, ex) -> {
+                try {
+                    PreConditions.check(ex == null, ResponseCode.UNKNOWN);
+                    ResponseCode code = ResponseCode.valueOf(x.getCode());
+                    switch (code) {
+                        case SUCCESS:
+                            pendingMap.remove(x.getIndex());
+                            updatePeerWaterMark(x.getTerm(), peerId, x.getIndex());
+                            ackChecker.wakeup();
+                            break;
+                        case INCONSISTENT_TERM:
+                            LOG.info("get inconsisent state when push index={}, term = {}", x.getIndex(), x.getTerm());
+                            changeState(-1, PushEntryRequest.Type.COMPARE);
+                            break;
+                        default:
+                            LOG.warn("error response code, index = {}, term = {}", x.getIndex(), x.getTerm());
+                            break;
+                    }
+                } catch (Throwable t) {
+                    LOG.error("", t);
+                }
+            });
+            lastPushCommitTimeMs = System.currentTimeMillis();
+
+        }
+
+        private void doCommit() throws Exception {
+            if (Utils.elapsed(lastPushCommitTimeMs) > 1000) {
+                PushEntryRequest request = buildPushRequest(null, PushEntryRequest.Type.COMMIT);
+                rpcService.push(request);
+                lastPushCommitTimeMs = System.currentTimeMillis();
+            }
+        }
+
+        private PushEntryRequest buildPushRequest(Entry entry, PushEntryRequest.Type type) {
+            PushEntryRequest request = new PushEntryRequest();
+            request.setGroup(memberState.getGroup());
+            request.setRemoteId(peerId);
+            request.setLeaderId(leaderId);
+            request.setTerm(term);
+            request.setEntry(entry);
+            request.setType(type);
+            request.setCommitIndex(raftStore.getCommittedIndex());
+            return request;
+        }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
     }
 }
