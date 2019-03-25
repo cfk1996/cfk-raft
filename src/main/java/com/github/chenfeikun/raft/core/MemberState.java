@@ -67,6 +67,14 @@ public class MemberState {
         }
     }
 
+    public int peerSize() {
+        return peerMap.size();
+    }
+
+    public boolean isQuorum(int num) {
+        return num >= ((peerSize() / 2) + 1);
+    }
+
     public String getSelfAddr() {
         return peerMap.get(selfId);
     }
@@ -129,6 +137,14 @@ public class MemberState {
 
     public boolean isLeader() {
         return role == Role.LEADER;
+    }
+
+    public Role getRole() {
+        return role;
+    }
+
+    public void setRole(Role role) {
+        this.role = role;
     }
 
     public enum Role {

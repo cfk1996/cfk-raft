@@ -1,9 +1,12 @@
 package com.github.chenfeikun.raft.core;
 
+import com.alibaba.fastjson.JSON;
 import com.github.chenfeikun.raft.LifeCycle;
 import com.github.chenfeikun.raft.NodeConfig;
+import com.github.chenfeikun.raft.concurrent.AppendFuture;
 import com.github.chenfeikun.raft.concurrent.TimeoutFuture;
 import com.github.chenfeikun.raft.rpc.RpcService;
+import com.github.chenfeikun.raft.rpc.entity.AppendEntryResponse;
 import com.github.chenfeikun.raft.rpc.entity.PushEntryRequest;
 import com.github.chenfeikun.raft.rpc.entity.PushEntryResponse;
 import com.github.chenfeikun.raft.rpc.entity.ResponseCode;
@@ -45,6 +48,7 @@ public class EntryPusher implements LifeCycle {
     private Map<String, EntryDispatcher> dispatcherMap = new HashMap<>();
 
     private Map<Long, ConcurrentMap<String, Long>> peerWaterMarksByTerm = new ConcurrentHashMap<>();
+    private Map<Long, ConcurrentMap<Long, TimeoutFuture<AppendEntryResponse>>> pendingAppendResponsesByTerm = new ConcurrentHashMap<>();
 
     /** backend handler*/
     private EntryHandler entryHandler = new EntryHandler(LOG);
@@ -80,6 +84,12 @@ public class EntryPusher implements LifeCycle {
                 waterMarks.put(peer, -1L);
             }
             peerWaterMarksByTerm.putIfAbsent(term, waterMarks);
+        }
+    }
+
+    private void checkTermForPendingMark(long term, String msg) {
+        if (!pendingAppendResponsesByTerm.containsKey(term)) {
+            pendingAppendResponsesByTerm.putIfAbsent(term, new ConcurrentHashMap<>());
         }
     }
 
@@ -431,11 +441,22 @@ public class EntryPusher implements LifeCycle {
 
                 if (truncateIndex != -1) {
                     changeState(truncateIndex, PushEntryRequest.Type.TRUNCATE);
-                    doTruncate();
+                    doTruncate(truncateIndex);
                     break;
                 }
-
             }
+        }
+
+        private void doTruncate(long truncateIndex) throws Exception {
+            PreConditions.check(type.get() == PushEntryRequest.Type.TRUNCATE, ResponseCode.UNKNOWN);
+            Entry entry = raftStore.get(truncateIndex);
+            PreConditions.check(entry != null, ResponseCode.UNKNOWN);
+            PushEntryRequest request = buildPushRequest(entry, PushEntryRequest.Type.TRUNCATE);
+            PushEntryResponse response = rpcService.push(request).get(3, TimeUnit.SECONDS);
+            PreConditions.check(response != null, ResponseCode.UNKNOWN);
+            PreConditions.check(response.getCode() == ResponseCode.SUCCESS.getCode(), ResponseCode.valueOf(response.getCode()));
+            lastPushCommitTimeMs = System.currentTimeMillis();
+            changeState(truncateIndex, PushEntryRequest.Type.APPEND);
         }
 
         private void doAppend() throws Exception {
@@ -569,5 +590,145 @@ public class EntryPusher implements LifeCycle {
 
 
 
+    }
+
+    /**
+     * Check the quorum index and complete the pending requests.
+     */
+    private class AckChecker extends ShutdownableThread {
+
+
+        private long lastPrintWatermarkTimeMs = System.currentTimeMillis();
+        private long lastCheckLeakTimeMs = System.currentTimeMillis();
+        private long lastQuorumIndex = -1;
+
+
+        public AckChecker(Logger LOG) {
+            super("AckChecker", LOG);
+        }
+
+        @Override
+        public void dowork() {
+            try {
+                if (Utils.elapsed(lastCheckLeakTimeMs) > 3000) {
+                    LOG.info("[{}][{}] term={} ledgerBegin={} ledgerEnd={} committed={} watermarks={}",
+                            memberState.getSelfId(), memberState.getRole(), memberState.getCurrTerm(),
+                            raftStore.getBeginIndex(), raftStore.getEndIndex(), raftStore.getCommittedIndex(),
+                            JSON.toJSONString(peerWaterMarksByTerm));
+                    lastPrintWatermarkTimeMs = System.currentTimeMillis();
+                }
+                if (!memberState.isLeader()) {
+                    waitForRunning(1);
+                    return;
+                }
+                long currTerm = memberState.getCurrTerm();
+                checkTermForPendingMark(currTerm, "ackcheck");
+                checkTermForWaterMark(currTerm, "ackcheck");
+                if (pendingAppendResponsesByTerm.size() > 1) {
+                    for (Long term : pendingAppendResponsesByTerm.keySet()) {
+                        if (term == currTerm) {
+                            continue;
+                        }
+                        for (Map.Entry<Long, TimeoutFuture<AppendEntryResponse>> futureEntry :
+                                pendingAppendResponsesByTerm.get(term).entrySet()) {
+                            AppendEntryResponse response = new AppendEntryResponse();
+                            response.setGroup(memberState.getGroup());
+                            response.setIndex(futureEntry.getKey());
+                            response.setCode(ResponseCode.TERM_CHANGED.getCode());
+                            response.setLeaderId(memberState.getLeaderId());
+                            futureEntry.getValue().complete(response);
+                        }
+                        pendingAppendResponsesByTerm.remove(term);
+                    }
+                }
+                if (peerWaterMarksByTerm.size() > 1) {
+                    for (Long term : peerWaterMarksByTerm.keySet()) {
+                        if (term == currTerm) {
+                            continue;
+                        }
+                        peerWaterMarksByTerm.remove(term);
+                    }
+                }
+                Map<String, Long> peerWaterMarks = peerWaterMarksByTerm.get(currTerm);
+                long quorumIndex = -1;
+                for (Long index : peerWaterMarks.values()) {
+                    int num = 0;
+                    for (Long another : peerWaterMarks.values()) {
+                        if (another >= index) {
+                            num++;
+                        }
+                    }
+                    if (memberState.isQuorum(num) && index > quorumIndex) {
+                        quorumIndex = index;
+                    }
+                }
+                raftStore.updateCommittedIndex(currTerm, quorumIndex);
+                ConcurrentMap<Long, TimeoutFuture<AppendEntryResponse>> responses = pendingAppendResponsesByTerm.get(currTerm);
+                boolean needCheck = false;
+                int ackNum = 0;
+                if (quorumIndex >= 0) {
+                    for (Long i = quorumIndex; i >= 0 ; i--) {
+                        try {
+                            CompletableFuture<AppendEntryResponse> future = responses.remove(i);
+                            if (future == null) {
+                                needCheck = lastQuorumIndex != -1 && lastQuorumIndex != quorumIndex && i != lastQuorumIndex;
+                                break;
+                            } else if (!future.isDone()) {
+                                AppendEntryResponse response = new AppendEntryResponse();
+                                response.setGroup(memberState.getGroup());
+                                response.setTerm(currTerm);
+                                response.setIndex(i);
+                                response.setLeaderId(memberState.getSelfId());
+                                response.setPos(((AppendFuture) future).getPos());
+                                future.complete(response);
+                            }
+                            ackNum++;
+                        } catch (Throwable t) {
+                            LOG.error("Error in ack to index = {},  term = {}", i, currTerm, t);
+                        }
+                    }
+                }
+
+                if (ackNum == 0) {
+                    for (long i = quorumIndex + 1; i < Integer.MAX_VALUE; i++) {
+                        TimeoutFuture<AppendEntryResponse> future = responses.get(i);
+                        if (future == null) {
+                            break;
+                        } else if (future.isTimeOut()) {
+                            AppendEntryResponse response = new AppendEntryResponse();
+                            response.setGroup(memberState.getGroup());
+                            response.setCode(ResponseCode.WAIT_QUORUM_ACK_TIMEOUT.getCode());
+                            response.setTerm(currTerm);
+                            response.setIndex(i);
+                            response.setLeaderId(memberState.getSelfId());
+                            future.complete(response);
+                        } else {
+                            break;
+                        }
+                    }
+                    waitForRunning(1);
+                }
+
+                if (Utils.elapsed(lastCheckLeakTimeMs) > 1000 || needCheck) {
+                    updatePeerWaterMark(currTerm, memberState.getSelfId(), raftStore.getEndIndex());
+                    for (Map.Entry<Long, TimeoutFuture<AppendEntryResponse>> futureEntry : responses.entrySet()) {
+                        if (futureEntry.getKey() < quorumIndex) {
+                            AppendEntryResponse response = new AppendEntryResponse();
+                            response.setGroup(memberState.getGroup());
+                            response.setTerm(currTerm);
+                            response.setIndex(futureEntry.getKey());
+                            response.setLeaderId(memberState.getSelfId());
+                            response.setPos(((AppendFuture) futureEntry.getValue()).getPos());
+                            futureEntry.getValue().complete(response);
+                            responses.remove(futureEntry.getKey());
+                        }
+                    }
+                    lastCheckLeakTimeMs = System.currentTimeMillis();
+                }
+            } catch (Throwable t) {
+                EntryPusher.LOG.error("error in {}", getName(), t);
+                Utils.sleep(100);
+            }
+        }
     }
 }

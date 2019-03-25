@@ -42,7 +42,7 @@ public abstract class ShutdownableThread extends Thread {
         }
     }
 
-    private void wakeup() {
+    public void wakeup() {
         if (hasNotified.compareAndSet(false, true)) {
             waitPoint.countDown();
         }
