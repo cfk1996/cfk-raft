@@ -20,6 +20,8 @@ public abstract class RaftStore implements LifeCycle {
 
     public abstract Entry appendAsFollower(Entry entry, long leaderTerm, String leaderId);
 
+    public abstract Entry appendAsLeader(Entry entry);
+
     public abstract long getCommittedIndex();
 
     /** default method*/

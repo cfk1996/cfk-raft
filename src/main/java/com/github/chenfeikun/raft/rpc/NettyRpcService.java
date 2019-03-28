@@ -209,6 +209,21 @@ public class NettyRpcService extends RpcService {
     }
 
     @Override
+    public CompletableFuture<GetEntriesResponse> get(GetEntriesRequest request) throws Exception {
+        return null;
+    }
+
+    @Override
+    public CompletableFuture<AppendEntryResponse> append(AppendEntryRequest request) throws Exception {
+        return null;
+    }
+
+    @Override
+    public CompletableFuture<MetadataResponse> metadata(MetadataRequest request) throws Exception {
+        return null;
+    }
+
+    @Override
     public CompletableFuture<PushEntryResponse> push(PushEntryRequest request) throws Exception {
         return null;
     }
@@ -231,21 +246,6 @@ public class NettyRpcService extends RpcService {
     @Override
     public CompletableFuture<PushEntryResponse> handlePush(PushEntryRequest request) throws Exception {
         return nodeServer.handlePush(request);
-    }
-
-    @Override
-    public CompletableFuture<GetEntriesResponse> get(GetEntriesRequest request) throws Exception {
-        return null;
-    }
-
-    @Override
-    public CompletableFuture<AppendEntryResponse> append(AppendEntryRequest request) throws Exception {
-        return null;
-    }
-
-    @Override
-    public CompletableFuture<MetadataResponse> metadata(MetadataRequest request) throws Exception {
-        return null;
     }
 
     @Override

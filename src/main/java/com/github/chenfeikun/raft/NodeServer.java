@@ -1,5 +1,7 @@
 package com.github.chenfeikun.raft;
 
+import com.github.chenfeikun.raft.concurrent.AppendFuture;
+import com.github.chenfeikun.raft.core.Entry;
 import com.github.chenfeikun.raft.core.EntryPusher;
 import com.github.chenfeikun.raft.core.LeaderElection;
 import com.github.chenfeikun.raft.core.MemberState;
@@ -29,6 +31,7 @@ import com.github.chenfeikun.raft.utils.PreConditions;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.Collections;
 import java.util.concurrent.CompletableFuture;
 
 /**
@@ -43,7 +46,7 @@ public class NodeServer implements LifeCycle, RaftProtocolHander {
     private MemberState memberState;
     private NodeConfig config;
 
-    private RaftStore store;
+    private RaftStore raftStore;
     private RpcService rpcService;
     private EntryPusher entryPusher;
     private LeaderElection leaderElection;
@@ -51,9 +54,9 @@ public class NodeServer implements LifeCycle, RaftProtocolHander {
     public NodeServer(NodeConfig config) {
         this.config = config;
         this.memberState = new MemberState(config);
-        this.store = createStore(this.config.getStoreType(), this.config, memberState);
+        this.raftStore = createStore(this.config.getStoreType(), this.config, memberState);
         this.rpcService = new NettyRpcService(this);
-        this.entryPusher = new EntryPusher(config, memberState, store, rpcService);
+        this.entryPusher = new EntryPusher(config, memberState, raftStore, rpcService);
         this.leaderElection = new LeaderElection(config, memberState, rpcService);
     }
 
@@ -68,7 +71,20 @@ public class NodeServer implements LifeCycle, RaftProtocolHander {
 
     @Override
     public CompletableFuture<VoteResponse> handleVote(VoteRequest request) throws Exception {
-        return null;
+        try {
+            PreConditions.check(memberState.getSelfId().equals(request.getRemoteId()), ResponseCode.UNKNOWN_MEMBER,
+                    "%s != %s", memberState.getSelfId(), request.getRemoteId());
+            PreConditions.check(memberState.getGroup().equals(request.getGroup()), ResponseCode.UNKNOWN_GROUP,
+                    "%s != %s", memberState.getGroup(), request.getGroup());
+            return leaderElection.handleVote(request, false);
+        } catch (RaftException e) {
+            LOG.error("[{}} handle vote failed.", memberState.getSelfId(), e);
+            VoteResponse response = new VoteResponse();
+            response.copyBaseInfo(request);
+            response.setCode(e.getCode().getCode());
+            response.setLeaderId(memberState.getLeaderId());
+            return CompletableFuture.completedFuture(response);
+        }
     }
 
     @Override
@@ -86,6 +102,16 @@ public class NodeServer implements LifeCycle, RaftProtocolHander {
         return null;
     }
 
+
+    /**
+     * Handle the append request.
+     * 1. append the entry to local store
+     * 2. submit the future to entrypusher and wait the quorum ack
+     * 3. if the pending requests are full, then reject it immediately
+     * @param request
+     * @return
+     * @throws Exception
+     */
     @Override
     public CompletableFuture<AppendEntryResponse> handleAppend(AppendEntryRequest request) throws Exception {
         try {
@@ -97,16 +123,51 @@ public class NodeServer implements LifeCycle, RaftProtocolHander {
             PreConditions.check(memberState.isLeader(), ResponseCode.NOT_LEADER);
             long currentTerm = memberState.getCurrTerm();
             if (entryPusher.isPendingFull(currentTerm)) {
-
+                AppendEntryResponse response = new AppendEntryResponse();
+                response.setGroup(memberState.getGroup());
+                response.setCode(ResponseCode.LEADER_PENDING_FULL.getCode());
+                response.setTerm(currentTerm);
+                response.setLeaderId(memberState.getSelfId());
+                return AppendFuture.newCompletedFuture(-1, response);
             } else {
-
+                Entry entry = new Entry();
+                entry.setBody(request.getBody());
+                Entry ackEntry = raftStore.appendAsLeader(entry);
+                return entryPusher.waitAck(ackEntry);
             }
+        } catch (RaftException e) {
+            LOG.error("handle append error. id={}", memberState.getSelfId(), e);
+            AppendEntryResponse response = new AppendEntryResponse();
+            response.copyBaseInfo(request);
+            response.setCode(e.getCode().getCode());
+            response.setLeaderId(memberState.getLeaderId());
+            return AppendFuture.newCompletedFuture(-1, response);
         }
     }
 
     @Override
     public CompletableFuture<GetEntriesResponse> handleGet(GetEntriesRequest request) throws Exception {
-        return null;
+        try {
+            PreConditions.check(memberState.getSelfId().equals(request.getRemoteId()), ResponseCode.UNKNOWN_MEMBER,
+                    "%s != %s", memberState.getSelfId(), request.getRemoteId());
+            PreConditions.check(memberState.getGroup().equals(request.getGroup()), ResponseCode.UNKNOWN_GROUP,
+                    "%s != %s", memberState.getGroup(), request.getGroup());
+            PreConditions.check(memberState.isLeader(), ResponseCode.NOT_LEADER);
+            Entry entry = raftStore.get(request.getBeginIndex());
+            GetEntriesResponse response = new GetEntriesResponse();
+            response.setGroup(memberState.getGroup());
+            if (entry != null) {
+                response.setEntries(Collections.singletonList(entry));
+            }
+            return CompletableFuture.completedFuture(response);
+        } catch (RaftException e) {
+            LOG.error("[{}] handle get failed.", memberState.getSelfId(), e);
+            GetEntriesResponse response = new GetEntriesResponse();
+            response.copyBaseInfo(request);
+            response.setCode(e.getCode().getCode());
+            response.setLeaderId(memberState.getLeaderId());
+            return CompletableFuture.completedFuture(response);
+        }
     }
 
     @Override
@@ -135,7 +196,7 @@ public class NodeServer implements LifeCycle, RaftProtocolHander {
 
     @Override
     public void startup() {
-        this.store.startup();
+        this.raftStore.startup();
         this.rpcService.startup();
         this.entryPusher.startup();
         this.leaderElection.startup();
@@ -143,7 +204,7 @@ public class NodeServer implements LifeCycle, RaftProtocolHander {
 
     @Override
     public void shutdown() {
-        this.store.shutdown();
+        this.raftStore.shutdown();
         this.rpcService.shutdown();
         this.entryPusher.shutdown();
         this.leaderElection.shutdown();
@@ -166,11 +227,11 @@ public class NodeServer implements LifeCycle, RaftProtocolHander {
     }
 
     public RaftStore getStore() {
-        return store;
+        return raftStore;
     }
 
     public void setStore(RaftStore store) {
-        this.store = store;
+        this.raftStore = store;
     }
 
     public RpcService getRpcService() {

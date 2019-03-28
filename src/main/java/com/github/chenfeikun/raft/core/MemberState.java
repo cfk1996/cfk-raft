@@ -1,7 +1,9 @@
 package com.github.chenfeikun.raft.core;
 
 import com.github.chenfeikun.raft.NodeConfig;
+import com.github.chenfeikun.raft.rpc.entity.ResponseCode;
 import com.github.chenfeikun.raft.utils.IOUtils;
+import com.github.chenfeikun.raft.utils.PreConditions;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -34,6 +36,10 @@ public class MemberState {
     private String selfId;
     private String peers;
     private Map<String, String> peerMap;
+    private long knownMaxTermInGroup = -1;
+
+    private long endTerm = -1;
+    private long endIndex = -1;
 
     private Role role = Role.CANDIDATE;
     private String leaderId;
@@ -67,8 +73,54 @@ public class MemberState {
         }
     }
 
+    public synchronized long nextTerm() {
+        PreConditions.check(role == Role.CANDIDATE, ResponseCode.ILLEGAL_MEMBER_STATE, "%s != %s", role,
+                Role.CANDIDATE);
+        if (knownMaxTermInGroup > currTerm) {
+            currTerm = knownMaxTermInGroup;
+        } else {
+            currTerm++;
+        }
+        currVoteFor = null;
+        persistTerm();
+        return currTerm;
+    }
+
+    public boolean isPeerMember(String id) {
+        return id != null && peerMap.containsKey(id);
+    }
+
+    private void persistTerm() {
+        try {
+            Properties properties = new Properties();
+            properties.put(TERM_PERSIST_KEY_TERM, currTerm);
+            properties.put(TERM_PERSIST_KEY_VOTE_FOR, currVoteFor == null ? "" : currVoteFor);
+            String data = IOUtils.properties2String(properties);
+            IOUtils.string2File(data, nodeConfig.getDefaultPath() + File.separator + TERM_PERSIST_FILE);
+        } catch (Throwable t) {
+            LOG.error("persist curr term failed", t);
+        }
+    }
+
     public int peerSize() {
         return peerMap.size();
+    }
+
+    public synchronized void changeToLeader(long term) {
+        PreConditions.check(currTerm == term, ResponseCode.ILLEGAL_MEMBER_STATE);
+        this.role = Role.LEADER;
+        this.leaderId = selfId;
+    }
+
+    public synchronized void changeToCandidate(long term) {
+        assert term >= currTerm;
+        PreConditions.check(term >= currTerm, ResponseCode.ILLEGAL_MEMBER_STATE, "should %d >= %d", term, currTerm);
+        if (term > knownMaxTermInGroup) {
+            knownMaxTermInGroup = term;
+        }
+        //the currTerm should be promoted in handleVote thread
+        this.role = Role.CANDIDATE;
+        this.leaderId = null;
     }
 
     public boolean isQuorum(int num) {
@@ -137,6 +189,30 @@ public class MemberState {
 
     public boolean isLeader() {
         return role == Role.LEADER;
+    }
+
+    public boolean isFollower() {
+        return role == Role.FOLLOWER;
+    }
+
+    public boolean isCandidate() {
+        return role == Role.CANDIDATE;
+    }
+
+    public long getEndIndex() {
+        return endIndex;
+    }
+
+    public void setEndIndex(long endIndex) {
+        this.endIndex = endIndex;
+    }
+
+    public long getEndTerm() {
+        return endTerm;
+    }
+
+    public void setEndTerm(long endTerm) {
+        this.endTerm = endTerm;
     }
 
     public Role getRole() {

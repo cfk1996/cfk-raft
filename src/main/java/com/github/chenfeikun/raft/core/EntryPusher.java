@@ -68,12 +68,54 @@ public class EntryPusher implements LifeCycle {
 
     @Override
     public void startup() {
-
+        entryHandler.start();
+        ackChecker.start();
+        for (EntryDispatcher dispatcher : dispatcherMap.values()) {
+            dispatcher.start();
+        }
     }
 
     @Override
     public void shutdown() {
+        entryHandler.shutdown();
+        ackChecker.shutdown();
+        for (EntryDispatcher dispatcher : dispatcherMap.values()) {
+            dispatcher.shutdown();
+        }
+    }
 
+    public CompletableFuture<AppendEntryResponse> waitAck(Entry entry) {
+        updatePeerWaterMark(entry.getTerm(), memberState.getSelfId(), entry.getIndex());
+        if (memberState.getPeerMap().size() == 1) {
+            AppendEntryResponse response = new AppendEntryResponse();
+            response.setGroup(memberState.getGroup());
+            response.setLeaderId(memberState.getSelfId());
+            response.setIndex(entry.getIndex());
+            response.setTerm(entry.getTerm());
+            response.setPos(entry.getPos());
+            return AppendFuture.newCompletedFuture(entry.getPos(), response);
+        } else {
+            checkTermForPendingMark(entry.getTerm(), "waitAck");
+            AppendFuture<AppendEntryResponse> future = new AppendFuture<>(nodeConfig.getMaxWaitAckTimeMs());
+            future.setPos(entry.getPos());
+            CompletableFuture<AppendEntryResponse> old = pendingAppendResponsesByTerm.get(entry.getTerm()).put(entry.getIndex(), future);
+            if (old != null) {
+                LOG.warn("wait at old index = {}", entry.getIndex());
+            }
+            wakeupDispatchers();
+            return future;
+        }
+    }
+
+    public void wakeupDispatchers() {
+        for (EntryDispatcher entryDispatcher : dispatcherMap.values()) {
+            entryDispatcher.wakeup();
+        }
+    }
+
+    public boolean isPendingFull(long term) {
+        checkTermForPendingMark(term, "isPendingfull");
+        return pendingAppendResponsesByTerm.get(term).size() > nodeConfig.getMaxPendingRequestsNum();
     }
 
     private void checkTermForWaterMark(long term, String msg) {
