@@ -29,7 +29,7 @@ public interface RaftProtocolHander {
 
     CompletableFuture<HeartBeatResponse> handleHeartBeat(HeartBeatRequest request) throws Exception;
 
-    CompletableFuture<PullEntriesResponse> handlePull(PullEntriesRequest request) throws Exception;
+//    CompletableFuture<PullEntriesResponse> handlePull(PullEntriesRequest request) throws Exception;
 
     CompletableFuture<PushEntryResponse> handlePush(PushEntryRequest request) throws Exception;
 

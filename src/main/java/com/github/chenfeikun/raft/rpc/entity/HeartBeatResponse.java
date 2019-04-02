@@ -6,4 +6,14 @@ package com.github.chenfeikun.raft.rpc.entity;
  * @author: chenfeikun
  */
 public class HeartBeatResponse extends RequestOrResponse {
+
+    public HeartBeatResponse term(long term) {
+        this.term = term;
+        return this;
+    }
+
+    public HeartBeatResponse code(int code) {
+        this.code = code;
+        return this;
+    }
 }

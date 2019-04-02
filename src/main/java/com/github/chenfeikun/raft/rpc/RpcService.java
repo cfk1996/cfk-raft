@@ -1,7 +1,6 @@
 package com.github.chenfeikun.raft.rpc;
 
 import com.github.chenfeikun.raft.LifeCycle;
-import com.github.chenfeikun.raft.NodeServer;
 import com.github.chenfeikun.raft.core.RaftProtocol;
 import com.github.chenfeikun.raft.core.RaftProtocolHander;
 

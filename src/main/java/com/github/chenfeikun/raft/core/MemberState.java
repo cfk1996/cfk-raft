@@ -48,6 +48,7 @@ public class MemberState {
         this.group = config.getGroup();
         this.selfId = config.getSelfId();
         this.peers = config.getPeers();
+        // n0-localhost:20911
         for (String peerInfo : this.peers.split(";")) {
             peerMap.put(peerInfo.split("-")[0], peerInfo.split("-")[1]);
         }
@@ -121,6 +122,21 @@ public class MemberState {
         //the currTerm should be promoted in handleVote thread
         this.role = Role.CANDIDATE;
         this.leaderId = null;
+    }
+
+    public synchronized void changeToFollower(long term, String leaderId) {
+        PreConditions.check(currTerm == term, ResponseCode.ILLEGAL_MEMBER_STATE, "%d != %d", currTerm, term);
+        this.role = Role.FOLLOWER;
+        this.leaderId = leaderId;
+    }
+
+    public void updateEndIndexAndTerm(long index, long term) {
+        this.endIndex = index;
+        this.endTerm = term;
+    }
+
+    public String getPeerAddr(String id) {
+        return peerMap.get(id);
     }
 
     public boolean isQuorum(int num) {

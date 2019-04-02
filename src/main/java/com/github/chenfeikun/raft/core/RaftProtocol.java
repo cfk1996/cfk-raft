@@ -14,7 +14,7 @@ public interface RaftProtocol {
 
     CompletableFuture<HeartBeatResponse> heartBeat(HeartBeatRequest request) throws Exception;
 
-    CompletableFuture<PullEntriesResponse> pull(PullEntriesRequest request) throws Exception;
+//    CompletableFuture<PullEntriesResponse> pull(PullEntriesRequest request) throws Exception;
 
     CompletableFuture<PushEntryResponse> push(PushEntryRequest request) throws Exception;
 

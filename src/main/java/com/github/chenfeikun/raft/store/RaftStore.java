@@ -2,6 +2,7 @@ package com.github.chenfeikun.raft.store;
 
 import com.github.chenfeikun.raft.LifeCycle;
 import com.github.chenfeikun.raft.core.Entry;
+import com.github.chenfeikun.raft.core.MemberState;
 
 /**
  * @desciption: RaftStore
@@ -27,6 +28,10 @@ public abstract class RaftStore implements LifeCycle {
     /** default method*/
     public void updateCommittedIndex(long term, long committedIndex) {
 
+    }
+
+    protected MemberState getMemberState() {
+        return null;
     }
 
     @Override

@@ -53,6 +53,8 @@ public class LeaderElection implements LifeCycle {
     private List<RoleChangeHandler> roleChangeHandlers = new ArrayList<>();
     private VoteResponse.ParseResult lastParseResult = VoteResponse.ParseResult.WAIT_TO_REVOTE;
 
+    private StateMaintainer stateMaintainer = new StateMaintainer("state maintainer", logger);
+
     public LeaderElection(NodeConfig config, MemberState memberState, RpcService rpcService) {
         this.nodeConfig = config;
         this.memberState = memberState;
@@ -62,12 +64,18 @@ public class LeaderElection implements LifeCycle {
 
     @Override
     public void startup() {
-
+        stateMaintainer.start();
+        for (RoleChangeHandler handler : roleChangeHandlers) {
+            handler.startup();
+        }
     }
 
     @Override
     public void shutdown() {
-
+        stateMaintainer.shutdown();
+        for (RoleChangeHandler handler : roleChangeHandlers) {
+            handler.shutdown();
+        }
     }
 
     private void refreshIntervals(NodeConfig nodeConfig) {
@@ -127,7 +135,7 @@ public class LeaderElection implements LifeCycle {
             request.setRemoteId(id);
             request.setLeaderId(leaderId);
             request.setTerm(term);
-            CompletableFuture<HeartBeatResponse> future =rpcService.heartBeat(request);
+            CompletableFuture<HeartBeatResponse> future = rpcService.heartBeat(request);
             future.whenComplete((HeartBeatResponse x, Throwable ex) -> {
                 try {
                     if (ex != null) {
@@ -183,25 +191,32 @@ public class LeaderElection implements LifeCycle {
         }
     }
 
+    private void changeRoleToFollower(long term, String leaderId) {
+        logger.info("[{}] change role to follower. currTerm = {}, newTerm = {}, leaderId = {}", memberState.getCurrTerm(), term, leaderId);
+        memberState.changeToFollower(term, leaderId);
+        lastLeaderHeartBeatTime = System.currentTimeMillis();
+//        handleRoleChange(term, MemberState.Role.FOLLOWER);
+    }
+
     private void changeRoleToCandidate(long term) {
         synchronized (memberState) {
             if (term > memberState.getCurrTerm()) {
                 memberState.changeToCandidate(term);
-                handleRoleChange(term, MemberState.Role.CANDIDATE);
+//                handleRoleChange(term, MemberState.Role.CANDIDATE);
                 logger.info("[{}] [ChangeRoleToCandidate] from term: {} and currTerm: {}", memberState.getSelfId(), term, memberState.getCurrTerm());
             }
         }
     }
 
-    private void handleRoleChange(long term, MemberState.Role role) {
-        for (RoleChangeHandler roleChangeHandler : roleChangeHandlers) {
-            try {
-                roleChangeHandler.handle(term, role);
-            } catch (Throwable t) {
-                logger.warn("Handle role change failed term={} role={} handler={}", term, role, roleChangeHandler.getClass(), t);
-            }
-        }
-    }
+//    private void handleRoleChange(long term, MemberState.Role role) {
+//        for (RoleChangeHandler roleChangeHandler : roleChangeHandlers) {
+//            try {
+//                roleChangeHandler.handle(term, role);
+//            } catch (Throwable t) {
+//                logger.warn("Handle role change failed term={} role={} handler={}", term, role, roleChangeHandler.getClass(), t);
+//            }
+//        }
+//    }
 
     private void maintainAsFollower() {
         if (Utils.elapsed(lastLeaderHeartBeatTime) > 2 * heartBeatTimeIntervalMs) {
@@ -268,8 +283,6 @@ public class LeaderElection implements LifeCycle {
                             case ACCEPT:
                                 acceptedNum.incrementAndGet();
                                 break;
-                            case REJECT_ALREADY_VOTED:
-                                break;
                             case REJECT_ALREADY_HAS_LEADER:
                                 alreadyHasLeader.compareAndSet(false, true);
                                 break;
@@ -312,17 +325,17 @@ public class LeaderElection implements LifeCycle {
         }
         lastVoteCost = Utils.elapsed(startVoteTimeMs);
         VoteResponse.ParseResult parseResult;
-        if (knownMaxTermInGroup.get() > term) {
+        if (knownMaxTermInGroup.get() > term) { // self's term小于其他候选者的任期，等待下一次选举
             parseResult = VoteResponse.ParseResult.WAIT_TO_VOTE_NEXT;
             nextTimeToRequestVote = getNextTimeToRequestVote();
             changeRoleToCandidate(knownMaxTermInGroup.get());
-        } else if (alreadyHasLeader.get()) {
+        } else if (alreadyHasLeader.get()) { // 已经有leader了，等待心跳超时
             parseResult = VoteResponse.ParseResult.WAIT_TO_VOTE_NEXT;
             nextTimeToRequestVote = getNextTimeToRequestVote() + heartBeatTimeIntervalMs*maxHeartBeatLeak;
-        } else if (!memberState.isQuorum(validNum.get())) {
+        } else if (!memberState.isQuorum(validNum.get())) { // 可能是自己断网了，没有收到足够的response，不增加term,重新vote
             parseResult = VoteResponse.ParseResult.WAIT_TO_REVOTE;
             nextTimeToRequestVote = getNextTimeToRequestVote();
-        } else if (memberState.isQuorum(acceptedNum.get())) {
+        } else if (memberState.isQuorum(acceptedNum.get())) { // 自己当选leader
             parseResult = VoteResponse.ParseResult.PASSED;
         } else if (memberState.isQuorum(acceptedNum.get() + notReadyTermNum.get())) {
             parseResult = VoteResponse.ParseResult.REVOTE_IMMEDIATELY;
@@ -349,7 +362,7 @@ public class LeaderElection implements LifeCycle {
             if (memberState.getCurrTerm() == term) {
                 memberState.changeToLeader(term);
                 lastSendHeartBeatTime = -1;
-                handleRoleChange(term, MemberState.Role.LEADER);
+//                handleRoleChange(term, MemberState.Role.LEADER);
                 logger.info("[{}] [ChangeRoleToLeader] from term: {} and currTerm: {}", memberState.getSelfId(), term, memberState.getCurrTerm());
             }
         }
@@ -440,6 +453,57 @@ public class LeaderElection implements LifeCycle {
             return CompletableFuture.completedFuture(new VoteResponse(request).term(memberState.getCurrTerm())
                 .voteResult(VoteResponse.RESULT.ACCEPT));
         }
+    }
+
+    public CompletableFuture<HeartBeatResponse> handleHeartBeat(HeartBeatRequest request) {
+        if (!memberState.isPeerMember(request.getLeaderId())) {
+            logger.warn("[BUG] [HandleHeartBeat] remoteId={} is an unknown member", request.getLeaderId());
+            return CompletableFuture.completedFuture(new HeartBeatResponse().term(memberState.getCurrTerm())
+                .code(ResponseCode.UNKNOWN_MEMBER.getCode()));
+        }
+
+        if (memberState.getSelfId().equals(request.getLeaderId())) {
+            logger.warn("[BUG] handleHeartBeat selfID = {}, remoteId = {}", memberState.getSelfId(), request.getRemoteId());
+            return CompletableFuture.completedFuture(new HeartBeatResponse().term(memberState.getCurrTerm())
+                .code(ResponseCode.UNEXPECTED_MEMBER.getCode()));
+        }
+
+        if (request.getTerm() < memberState.getCurrTerm()) {
+            return CompletableFuture.completedFuture(new HeartBeatResponse().term(memberState.getCurrTerm())
+                .code(ResponseCode.EXPIRED_TERM.getCode()));
+        } else if (request.getTerm() == memberState.getCurrTerm()) {
+            if (request.getLeaderId().equals(memberState.getLeaderId())) {
+                lastLeaderHeartBeatTime = System.currentTimeMillis();
+                return CompletableFuture.completedFuture(new HeartBeatResponse());
+            }
+        }
+        // exceptional situation : request.term > memberstate.currTerm
+        synchronized (memberState) {
+            if (request.getTerm() < memberState.getCurrTerm()) {
+                return CompletableFuture.completedFuture(new HeartBeatResponse().term(memberState.getCurrTerm())
+                    .code(ResponseCode.EXPIRED_TERM.getCode()));
+            } else if (request.getTerm() == memberState.getCurrTerm()) {
+                if (memberState.getLeaderId() == null) {
+                    changeRoleToFollower(request.getTerm(), request.getLeaderId());
+                    return CompletableFuture.completedFuture(new HeartBeatResponse());
+                } else if (request.getLeaderId().equals(memberState.getLeaderId())) {
+                    lastLeaderHeartBeatTime = System.currentTimeMillis();
+                    return CompletableFuture.completedFuture(new HeartBeatResponse());
+                } else {
+                    // Can't happen in common situation. Request.leaderId != local.leaderId
+                    logger.error("[{}] error. Different leaderID, local leader id = {}, but request's leaderid = {}",
+                            memberState.getSelfId(), memberState.getLeaderId(), request.getLeaderId());
+                    return CompletableFuture.completedFuture(new HeartBeatResponse().term(memberState.getCurrTerm())
+                            .code(ResponseCode.INCONSISTENT_LEADER.getCode()));
+                }
+            } else {
+                changeRoleToCandidate(request.getTerm());
+                needIncreaseTermImmediately = true;
+                return CompletableFuture.completedFuture(new HeartBeatResponse().term(memberState.getCurrTerm())
+                    .code(ResponseCode.TERM_NOT_READY.getCode()));
+            }
+        }
+
     }
 
     public class StateMaintainer extends ShutdownableThread {

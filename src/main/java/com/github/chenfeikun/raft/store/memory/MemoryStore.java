@@ -1,10 +1,16 @@
 package com.github.chenfeikun.raft.store.memory;
 
 import com.github.chenfeikun.raft.NodeConfig;
+import com.github.chenfeikun.raft.core.Entry;
 import com.github.chenfeikun.raft.core.MemberState;
+import com.github.chenfeikun.raft.rpc.entity.ResponseCode;
 import com.github.chenfeikun.raft.store.RaftStore;
+import com.github.chenfeikun.raft.utils.PreConditions;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * @desciption: MemoryStore
@@ -15,12 +21,74 @@ public class MemoryStore extends RaftStore {
 
     private static final Logger LOG = LoggerFactory.getLogger(MemoryStore.class);
 
-    private NodeConfig config;
-    private MemberState state;
+    private long beginIndex = -1;
+    private long endIndex = -1;
+    private long committedIndex = -1;
+    private long endTerm;
+
+    private Map<Long, Entry> cachedEntries = new ConcurrentHashMap<>();
+
+    private NodeConfig nodeConfig;
+    private MemberState memberState;
 
     public MemoryStore(NodeConfig config, MemberState state) {
-        this.config = config;
-        this.state = state;
+        this.nodeConfig = config;
+        this.memberState = state;
     }
 
+
+    @Override
+    public long getEndIndex() {
+        return endIndex;
+    }
+
+    @Override
+    public long getBeginIndex() {
+        return beginIndex;
+    }
+
+    @Override
+    public Entry get(Long index) {
+        return null;
+    }
+
+    @Override
+    public Entry appendAsFollower(Entry entry, long leaderTerm, String leaderId) {
+        return null;
+    }
+
+    @Override
+    public Entry appendAsLeader(Entry entry) {
+        PreConditions.check(memberState.isLeader(), ResponseCode.NOT_LEADER);
+        synchronized (memberState) {
+            PreConditions.check(memberState.isLeader(), ResponseCode.NOT_LEADER);
+            endIndex++;
+            committedIndex++;
+            endTerm = memberState.getCurrTerm();
+            entry.setIndex(endIndex);
+            entry.setTerm(memberState.getCurrTerm());
+            cachedEntries.put(entry.getIndex(), entry);
+            if (beginIndex == -1) {
+                beginIndex = endIndex;
+            }
+            updateEndIndexAndTerm();
+            return entry;
+        }
+    }
+
+    private void updateEndIndexAndTerm() {
+        if (getMemberState() != null) {
+            getMemberState().updateEndIndexAndTerm(endIndex, endTerm);
+        }
+    }
+
+    @Override
+    public MemberState getMemberState() {
+        return this.memberState;
+    }
+
+    @Override
+    public long getCommittedIndex() {
+        return 0;
+    }
 }

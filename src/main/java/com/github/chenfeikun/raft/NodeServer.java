@@ -60,17 +60,32 @@ public class NodeServer implements LifeCycle, RaftProtocolHander {
         this.leaderElection = new LeaderElection(config, memberState, rpcService);
     }
 
+    @Override
+    public void startup() {
+        this.raftStore.startup();
+        this.rpcService.startup();
+        this.entryPusher.startup();
+        this.leaderElection.startup();
+    }
+
+    @Override
+    public void shutdown() {
+        this.raftStore.shutdown();
+        this.rpcService.shutdown();
+        this.entryPusher.shutdown();
+        this.leaderElection.shutdown();
+    }
 
     private RaftStore createStore(String type, NodeConfig config, MemberState state) {
         if (type.equals(NodeConfig.MEMORY)) {
-            return new MemoryStore(config, memberState);
+            return new MemoryStore(config, state);
         } else {
-            return new MmapFileStore(config, memberState);
+            return new MmapFileStore(config, state);
         }
     }
 
     @Override
-    public CompletableFuture<VoteResponse> handleVote(VoteRequest request) throws Exception {
+    public CompletableFuture<VoteResponse> handleVote(VoteRequest request) {
         try {
             PreConditions.check(memberState.getSelfId().equals(request.getRemoteId()), ResponseCode.UNKNOWN_MEMBER,
                     "%s != %s", memberState.getSelfId(), request.getRemoteId());
@@ -88,18 +103,40 @@ public class NodeServer implements LifeCycle, RaftProtocolHander {
     }
 
     @Override
-    public CompletableFuture<HeartBeatResponse> handleHeartBeat(HeartBeatRequest request) throws Exception {
-        return null;
+    public CompletableFuture<HeartBeatResponse> handleHeartBeat(HeartBeatRequest request) {
+        try {
+            PreConditions.check(memberState.getSelfId().equals(request.getRemoteId()), ResponseCode.UNKNOWN_MEMBER);
+            PreConditions.check(memberState.getGroup().equals(request.getGroup()), ResponseCode.UNKNOWN_GROUP);
+            return leaderElection.handleHeartBeat(request);
+        } catch (RaftException e) {
+            LOG.error("[{}] handle heart beat failed. Request = {}", memberState.getSelfId(), request.baseInfo());
+            HeartBeatResponse response = new HeartBeatResponse();
+            response.copyBaseInfo(request);
+            response.setCode(e.getCode().getCode());
+            response.setLeaderId(memberState.getLeaderId());
+            return CompletableFuture.completedFuture(response);
+        }
     }
 
-    @Override
-    public CompletableFuture<PullEntriesResponse> handlePull(PullEntriesRequest request) throws Exception {
-        return null;
-    }
+//    @Override
+//    public CompletableFuture<PullEntriesResponse> handlePull(PullEntriesRequest request) throws Exception {
+//        return null;
+//    }
 
     @Override
     public CompletableFuture<PushEntryResponse> handlePush(PushEntryRequest request) throws Exception {
-        return null;
+        try {
+            PreConditions.check(memberState.getSelfId().equals(request.getRemoteId()), ResponseCode.UNKNOWN_MEMBER);
+            PreConditions.check(memberState.getGroup().equals(request.getGroup()), ResponseCode.UNKNOWN_GROUP);
+            return entryPusher.handlePush(request);
+        } catch (RaftException e) {
+            LOG.error("[{}] handle push failed.", memberState.getSelfId(), e);
+            PushEntryResponse responses = new PushEntryResponse();
+            responses.copyBaseInfo(request);
+            responses.setCode(e.getCode().getCode());
+            responses.setLeaderId(memberState.getLeaderId());
+            return CompletableFuture.completedFuture(responses);
+        }
     }
 
 
@@ -192,22 +229,6 @@ public class NodeServer implements LifeCycle, RaftProtocolHander {
             response.setLeaderId(memberState.getLeaderId());
             return CompletableFuture.completedFuture(response);
         }
-    }
-
-    @Override
-    public void startup() {
-        this.raftStore.startup();
-        this.rpcService.startup();
-        this.entryPusher.startup();
-        this.leaderElection.startup();
-    }
-
-    @Override
-    public void shutdown() {
-        this.raftStore.shutdown();
-        this.rpcService.shutdown();
-        this.entryPusher.shutdown();
-        this.leaderElection.shutdown();
     }
 
     public MemberState getMemberState() {

@@ -45,7 +45,6 @@ public class EntryPusher implements LifeCycle {
     private RaftStore raftStore;
     private RpcService rpcService;
 
-    private Map<String, EntryDispatcher> dispatcherMap = new HashMap<>();
 
     private Map<Long, ConcurrentMap<String, Long>> peerWaterMarksByTerm = new ConcurrentHashMap<>();
     private Map<Long, ConcurrentMap<Long, TimeoutFuture<AppendEntryResponse>>> pendingAppendResponsesByTerm = new ConcurrentHashMap<>();
@@ -53,6 +52,7 @@ public class EntryPusher implements LifeCycle {
     /** backend handler*/
     private EntryHandler entryHandler = new EntryHandler(LOG);
     private AckChecker ackChecker = new AckChecker(LOG);
+    private Map<String, EntryDispatcher> dispatcherMap = new HashMap<>();
 
     public EntryPusher(NodeConfig config, MemberState memberState, RaftStore store, RpcService rpcService) {
         this.nodeConfig = config;
@@ -82,6 +82,10 @@ public class EntryPusher implements LifeCycle {
         for (EntryDispatcher dispatcher : dispatcherMap.values()) {
             dispatcher.shutdown();
         }
+    }
+
+    public CompletableFuture<PushEntryResponse> handlePush(PushEntryRequest request) throws Exception {
+        return entryHandler.handlePush(request);
     }
 
     public CompletableFuture<AppendEntryResponse> waitAck(Entry entry) {
@@ -222,6 +226,34 @@ public class EntryPusher implements LifeCycle {
         }
 
         private void handleCompare(long index, PushEntryRequest key, CompletableFuture<PushEntryResponse> value) {
+        }
+
+        private CompletableFuture<PushEntryResponse> handlePush(PushEntryRequest request) throws Exception {
+            CompletableFuture<PushEntryResponse> future = new TimeoutFuture<>(1000);
+            switch (request.getType()) {
+                case APPEND:
+                    PreConditions.check(request.getEntry() != null, ResponseCode.UNEXPECTED_ARGUMENT);
+                    long index = request.getEntry().getIndex();
+                    Pair<PushEntryRequest, CompletableFuture<PushEntryResponse>> old = writeRequestMap.putIfAbsent(index, new Pair<>(request, future));
+                    if (old != null) {
+                        future.complete(buildResponse(request, ResponseCode.REPEATED_PUSH.getCode()));
+                    }
+                    break;
+                case COMMIT:
+                    compareOrTruncateRequests.put(new Pair<>(request, future));
+                    break;
+                case COMPARE:
+                case TRUNCATE:
+                    PreConditions.check(request.getEntry() != null, ResponseCode.UNEXPECTED_ARGUMENT);
+                    writeRequestMap.clear();
+                    compareOrTruncateRequests.put(new Pair<>(request, future));
+                    break;
+                default:
+                    LOG.error("unknown type in handle push, type = {}", request.getType());
+                    future.complete(buildResponse(request, ResponseCode.UNEXPECTED_ARGUMENT.getCode()));
+                    break;
+            }
+            return future;
         }
 
         public CompletableFuture<PushEntryResponse> handleCommit(long commitIndex, PushEntryRequest request,
@@ -604,34 +636,6 @@ public class EntryPusher implements LifeCycle {
             request.setCommitIndex(raftStore.getCommittedIndex());
             return request;
         }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
     }
 
     /**

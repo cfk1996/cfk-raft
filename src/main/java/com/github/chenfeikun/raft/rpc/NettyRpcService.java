@@ -91,7 +91,7 @@ public class NettyRpcService extends RpcService {
         this.remotingServer.registerProcessor(RequestCode.METADATA.getCode(), protocolProcessor, null);
         this.remotingServer.registerProcessor(RequestCode.APPEND.getCode(), protocolProcessor, null);
         this.remotingServer.registerProcessor(RequestCode.GET.getCode(), protocolProcessor, null);
-        this.remotingServer.registerProcessor(RequestCode.PULL.getCode(), protocolProcessor, null);
+//        this.remotingServer.registerProcessor(RequestCode.PULL.getCode(), protocolProcessor, null);
         this.remotingServer.registerProcessor(RequestCode.PUSH.getCode(), protocolProcessor, null);
         this.remotingServer.registerProcessor(RequestCode.VOTE.getCode(), protocolProcessor, null);
         this.remotingServer.registerProcessor(RequestCode.HEART_BEAT.getCode(), protocolProcessor, null);
@@ -154,14 +154,14 @@ public class NettyRpcService extends RpcService {
                 }, futureExecutor);
                 break;
             }
-            case PULL: {
-                PullEntriesRequest pullEntriesRequest = JSON.parseObject(request.getBody(), PullEntriesRequest.class);
-                CompletableFuture<PullEntriesResponse> future = handlePull(pullEntriesRequest);
-                future.whenCompleteAsync((x, y) -> {
-                    writeResponse(x, y, request, ctx);
-                }, futureExecutor);
-                break;
-            }
+//            case PULL: {
+//                PullEntriesRequest pullEntriesRequest = JSON.parseObject(request.getBody(), PullEntriesRequest.class);
+//                CompletableFuture<PullEntriesResponse> future = handlePull(pullEntriesRequest);
+//                future.whenCompleteAsync((x, y) -> {
+//                    writeResponse(x, y, request, ctx);
+//                }, futureExecutor);
+//                break;
+//            }
             case PUSH: {
                 PushEntryRequest pushEntryRequest = JSON.parseObject(request.getBody(), PushEntryRequest.class);
                 CompletableFuture<PushEntryResponse> future = handlePush(pushEntryRequest);
@@ -193,39 +193,104 @@ public class NettyRpcService extends RpcService {
         return null;
     }
 
+    private String getPeerAddr(RequestOrResponse request) {
+        return memberState.getPeerAddr(request.getRemoteId());
+    }
+
     @Override
     public CompletableFuture<VoteResponse> vote(VoteRequest request) throws Exception {
-        return null;
+        CompletableFuture<VoteResponse> future = new CompletableFuture<>();
+        try {
+            RemotingCommand requestCommand = RemotingCommand.createRequestCommand(RequestCode.VOTE.getCode(), null);
+            requestCommand.setBody(JSON.toJSONBytes(request));
+            remotingClient.invokeAsync(getPeerAddr(request), requestCommand, 3000, responseFuture -> {
+                VoteResponse response = JSON.parseObject(responseFuture.getResponseCommand().getBody(), VoteResponse.class);
+                future.complete(response);
+            });
+        } catch (Throwable t) {
+            LOG.error("send vote request error. request info = {}", request.baseInfo(), t);
+            future.complete(new VoteResponse());
+        }
+        return future;
     }
 
     @Override
     public CompletableFuture<HeartBeatResponse> heartBeat(HeartBeatRequest request) throws Exception {
-        return null;
+        CompletableFuture<HeartBeatResponse> future = new CompletableFuture<>();
+        try {
+            RemotingCommand remotingCommand = RemotingCommand.createRequestCommand(RequestCode.HEART_BEAT.getCode(), null);
+            remotingCommand.setBody(JSON.toJSONBytes(request));
+            remotingClient.invokeAsync(getPeerAddr(request), remotingCommand, 3000, responseFuture -> {
+                HeartBeatResponse response = JSON.parseObject(responseFuture.getResponseCommand().getBody(), HeartBeatResponse.class);
+                future.complete(response);
+            });
+        } catch (Throwable t) {
+            LOG.error("send heartbeat request failed. Request = {}", request.baseInfo(), t);
+            future.complete(new HeartBeatResponse().code(ResponseCode.NETWORK_ERROR.getCode()));
+        }
+        return future;
     }
 
-    @Override
-    public CompletableFuture<PullEntriesResponse> pull(PullEntriesRequest request) throws Exception {
-        return null;
-    }
+//    @Override
+//    public CompletableFuture<PullEntriesResponse> pull(PullEntriesRequest request) throws Exception {
+//        RemotingCommand remotingCommand = RemotingCommand.createRequestCommand(RequestCode.PULL.getCode(), null);
+//        remotingCommand.setBody(JSON.toJSONBytes(request));
+//        RemotingCommand remotingResponse = remotingClient.invokeSync(getPeerAddr(request), remotingCommand, 3000);
+//        PullEntriesResponse response = JSON.parseObject(remotingResponse.getBody(), PullEntriesResponse.class);
+//        return CompletableFuture.completedFuture(response);
+//    }
 
     @Override
     public CompletableFuture<GetEntriesResponse> get(GetEntriesRequest request) throws Exception {
+        GetEntriesResponse response = new GetEntriesResponse();
+        // TODO
         return null;
     }
 
     @Override
     public CompletableFuture<AppendEntryResponse> append(AppendEntryRequest request) throws Exception {
-        return null;
+        CompletableFuture<AppendEntryResponse> future = new CompletableFuture<>();
+        try {
+            RemotingCommand wrapperRequest = RemotingCommand.createRequestCommand(RequestCode.APPEND.getCode(), null);
+            wrapperRequest.setBody(JSON.toJSONBytes(request));
+            remotingClient.invokeAsync(getPeerAddr(request), wrapperRequest, 3000, responseFuture -> {
+                AppendEntryResponse response = JSON.parseObject(responseFuture.getResponseCommand().getBody(), AppendEntryResponse.class);
+                future.complete(response);
+            });
+        } catch (Throwable t) {
+            LOG.error("send append request failed. Request = {}", request.baseInfo(), t);
+            AppendEntryResponse response = new AppendEntryResponse();
+            response.copyBaseInfo(request);
+            response.code(ResponseCode.NETWORK_ERROR.getCode());
+            future.complete(response);
+        }
+        return future;
     }
 
     @Override
     public CompletableFuture<MetadataResponse> metadata(MetadataRequest request) throws Exception {
+        // TODO
         return null;
     }
 
     @Override
     public CompletableFuture<PushEntryResponse> push(PushEntryRequest request) throws Exception {
-        return null;
+        CompletableFuture<PushEntryResponse> future = new CompletableFuture<>();
+        try {
+            RemotingCommand wrapperRequest = RemotingCommand.createRequestCommand(RequestCode.PUSH.getCode(), null);
+            wrapperRequest.setBody(JSON.toJSONBytes(request));
+            remotingClient.invokeAsync(getPeerAddr(request), wrapperRequest, 3000, responseFuture -> {
+                PushEntryResponse response = JSON.parseObject(responseFuture.getResponseCommand().getBody(), PushEntryResponse.class);
+                future.complete(response);
+            });
+        } catch (Throwable t) {
+            LOG.error("send push request failed. Request = {}", request, t);
+            PushEntryResponse response = new PushEntryResponse();
+            response.copyBaseInfo(request);
+            response.setCode(ResponseCode.NETWORK_ERROR.getCode());
+            future.complete(response);
+        }
+        return future;
     }
 
     @Override
@@ -238,10 +303,10 @@ public class NettyRpcService extends RpcService {
         return nodeServer.handleHeartBeat(request);
     }
 
-    @Override
-    public CompletableFuture<PullEntriesResponse> handlePull(PullEntriesRequest request) throws Exception {
-        return nodeServer.handlePull(request);
-    }
+//    @Override
+//    public CompletableFuture<PullEntriesResponse> handlePull(PullEntriesRequest request) throws Exception {
+//        return nodeServer.handlePull(request);
+//    }
 
     @Override
     public CompletableFuture<PushEntryResponse> handlePush(PushEntryRequest request) throws Exception {
