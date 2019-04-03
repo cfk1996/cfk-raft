@@ -36,6 +36,15 @@ public class MemoryStore extends RaftStore {
         this.memberState = state;
     }
 
+    @Override
+    public void startup() {
+
+    }
+
+    @Override
+    public void shutdown() {
+
+    }
 
     @Override
     public long getEndIndex() {
@@ -49,12 +58,26 @@ public class MemoryStore extends RaftStore {
 
     @Override
     public Entry get(Long index) {
-        return null;
+        return cachedEntries.get(index);
     }
 
     @Override
     public Entry appendAsFollower(Entry entry, long leaderTerm, String leaderId) {
-        return null;
+        PreConditions.check(memberState.isFollower(), ResponseCode.NOT_FOLLOWER);
+        synchronized (memberState) {
+            PreConditions.check(memberState.isFollower(), ResponseCode.NOT_FOLLOWER);
+            PreConditions.check(leaderTerm == memberState.getCurrTerm(), ResponseCode.INCONSISTENT_TERM);
+            PreConditions.check(leaderId == memberState.getLeaderId(), ResponseCode.INCONSISTENT_LEADER);
+            endTerm = memberState.getCurrTerm();
+            endIndex = entry.getIndex();
+            committedIndex = entry.getIndex();
+            cachedEntries.put(entry.getIndex(), entry);
+            if (beginIndex == -1) {
+                beginIndex = endIndex;
+            }
+            updateEndIndexAndTerm();
+            return entry;
+        }
     }
 
     @Override
@@ -89,6 +112,6 @@ public class MemoryStore extends RaftStore {
 
     @Override
     public long getCommittedIndex() {
-        return 0;
+        return committedIndex;
     }
 }

@@ -9,7 +9,7 @@ import java.util.concurrent.CompletableFuture;
  * @CreateTime: 2019-03-18
  * @author: chenfeikun
  */
-public interface RaftProtocol {
+public interface RaftProtocol extends RaftClientProtocol {
     CompletableFuture<VoteResponse> vote(VoteRequest request) throws Exception;
 
     CompletableFuture<HeartBeatResponse> heartBeat(HeartBeatRequest request) throws Exception;
@@ -17,12 +17,4 @@ public interface RaftProtocol {
 //    CompletableFuture<PullEntriesResponse> pull(PullEntriesRequest request) throws Exception;
 
     CompletableFuture<PushEntryResponse> push(PushEntryRequest request) throws Exception;
-
-    /** client */
-    CompletableFuture<GetEntriesResponse> get(GetEntriesRequest request) throws Exception;
-
-    CompletableFuture<AppendEntryResponse> append(AppendEntryRequest request) throws Exception;
-
-    CompletableFuture<MetadataResponse> metadata(MetadataRequest request) throws Exception;
-
 }

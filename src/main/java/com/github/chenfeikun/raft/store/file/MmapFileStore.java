@@ -1,6 +1,7 @@
 package com.github.chenfeikun.raft.store.file;
 
 import com.github.chenfeikun.raft.NodeConfig;
+import com.github.chenfeikun.raft.core.Entry;
 import com.github.chenfeikun.raft.core.MemberState;
 import com.github.chenfeikun.raft.store.RaftStore;
 import org.slf4j.Logger;
@@ -27,4 +28,43 @@ public class MmapFileStore extends RaftStore {
         this.state = state;
     }
 
+    @Override
+    public long getEndIndex() {
+        return 0;
+    }
+
+    @Override
+    public long getBeginIndex() {
+        return 0;
+    }
+
+    @Override
+    public Entry get(Long index) {
+        return null;
+    }
+
+    @Override
+    public Entry appendAsFollower(Entry entry, long leaderTerm, String leaderId) {
+        return null;
+    }
+
+    @Override
+    public Entry appendAsLeader(Entry entry) {
+        return null;
+    }
+
+    @Override
+    public long getCommittedIndex() {
+        return 0;
+    }
+
+    @Override
+    public void startup() {
+
+    }
+
+    @Override
+    public void shutdown() {
+
+    }
 }

@@ -9,6 +9,7 @@ import org.slf4j.LoggerFactory;
 
 import java.io.File;
 import java.io.IOException;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.Properties;
 
@@ -35,7 +36,7 @@ public class MemberState {
     private String group;
     private String selfId;
     private String peers;
-    private Map<String, String> peerMap;
+    private Map<String, String> peerMap = new HashMap<>();
     private long knownMaxTermInGroup = -1;
 
     private long endTerm = -1;

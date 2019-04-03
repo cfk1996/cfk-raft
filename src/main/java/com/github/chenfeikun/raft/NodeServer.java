@@ -17,8 +17,6 @@ import com.github.chenfeikun.raft.rpc.entity.HeartBeatRequest;
 import com.github.chenfeikun.raft.rpc.entity.HeartBeatResponse;
 import com.github.chenfeikun.raft.rpc.entity.MetadataRequest;
 import com.github.chenfeikun.raft.rpc.entity.MetadataResponse;
-import com.github.chenfeikun.raft.rpc.entity.PullEntriesRequest;
-import com.github.chenfeikun.raft.rpc.entity.PullEntriesResponse;
 import com.github.chenfeikun.raft.rpc.entity.PushEntryRequest;
 import com.github.chenfeikun.raft.rpc.entity.PushEntryResponse;
 import com.github.chenfeikun.raft.rpc.entity.ResponseCode;

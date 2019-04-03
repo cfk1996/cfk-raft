@@ -33,14 +33,4 @@ public abstract class RaftStore implements LifeCycle {
     protected MemberState getMemberState() {
         return null;
     }
-
-    @Override
-    public void startup() {
-
-    }
-
-    @Override
-    public void shutdown() {
-
-    }
 }
