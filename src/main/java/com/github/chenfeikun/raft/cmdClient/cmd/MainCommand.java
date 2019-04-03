@@ -18,6 +18,7 @@ public class MainCommand {
         Map<String, BaseCommand> commands = new HashMap<>();
         commands.put("append", new AppendCommand());
         commands.put("get", new GetCommand());
+        commands.put("metadata", new MetadataCommand());
 
         JCommander.Builder builder = JCommander.newBuilder();
         builder.addCommand("server", new NodeConfig());

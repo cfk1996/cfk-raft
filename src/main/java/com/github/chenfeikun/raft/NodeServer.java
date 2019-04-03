@@ -116,11 +116,6 @@ public class NodeServer implements LifeCycle, RaftProtocolHander {
         }
     }
 
-//    @Override
-//    public CompletableFuture<PullEntriesResponse> handlePull(PullEntriesRequest request) throws Exception {
-//        return null;
-//    }
-
     @Override
     public CompletableFuture<PushEntryResponse> handlePush(PushEntryRequest request) throws Exception {
         try {
@@ -218,11 +213,16 @@ public class NodeServer implements LifeCycle, RaftProtocolHander {
             response.setGroup(memberState.getGroup());
             response.setLeaderId(memberState.getLeaderId());
             response.setPeers(memberState.getPeerMap());
+            response.setLocalId(memberState.getSelfId());
+            response.setTerm(memberState.getCurrTerm());
             return CompletableFuture.completedFuture(response);
         } catch (RaftException e) {
             LOG.error("{} handle metadata failed", memberState.getSelfId(), e);
             MetadataResponse response = new MetadataResponse();
             response.copyBaseInfo(request);
+
+
+
             response.setCode(e.getCode().getCode());
             response.setLeaderId(memberState.getLeaderId());
             return CompletableFuture.completedFuture(response);

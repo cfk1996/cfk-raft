@@ -19,7 +19,7 @@ public class MetadataCommand implements BaseCommand {
     private String group = "default";
 
     @Parameter(names = {"--serverId", "-s"}, description = "serverId", required = true)
-    private String serverId = "";
+    private String serverId;
 
     @Parameter(names = {"--peers", "-p"}, description = "peer info of this server")
     private String peers = "n0-localhost:20911;n1-localhost:20912;n2-localhost:20913";
@@ -28,6 +28,9 @@ public class MetadataCommand implements BaseCommand {
     public void doCommand() {
         Client client = new Client(group, peers);
         client.startup();
-        MetadataResponse response = client.
+        MetadataResponse response = client.metadata(serverId);
+        logger.info("metadata: selfId = {}, leaderId = {}, term = {}",  response.getLocalId(),
+                response.getLeaderId(), response.getTerm());
+        client.shutdown();
     }
 }

@@ -105,12 +105,12 @@ public class Client implements LifeCycle {
 
     @Override
     public void startup() {
-
+         this.clientRpcService.startup();
     }
 
     @Override
     public void shutdown() {
-
+         this.clientRpcService.shutdown();
     }
 
     private synchronized void needFreshMetadata() {
@@ -142,14 +142,12 @@ public class Client implements LifeCycle {
             request.setRemoteId(peerId);
             CompletableFuture<MetadataResponse> future = clientRpcService.metadata(request);
             MetadataResponse response = future.get(1500, TimeUnit.MILLISECONDS);
-            ;
+            return response;
         } catch (Exception t) {
-            needFreshMetadata();
-            logger.error("", t);
-            GetEntriesResponse getEntriesResponse = new GetEntriesResponse();
-            getEntriesResponse.setCode(ResponseCode.INTERNAL_ERROR.getCode());
-            return getEntriesResponse;
+            logger.error("get metadata error", t);
+            return new MetadataResponse();
         }
+
     }
 
     private class MetadataUpdater extends ShutdownableThread {

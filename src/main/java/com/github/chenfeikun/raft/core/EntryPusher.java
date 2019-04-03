@@ -11,7 +11,6 @@ import com.github.chenfeikun.raft.rpc.entity.PushEntryRequest;
 import com.github.chenfeikun.raft.rpc.entity.PushEntryResponse;
 import com.github.chenfeikun.raft.rpc.entity.ResponseCode;
 import com.github.chenfeikun.raft.store.RaftStore;
-import com.github.chenfeikun.raft.store.file.MmapFileStore;
 import com.github.chenfeikun.raft.store.memory.MemoryStore;
 import com.github.chenfeikun.raft.utils.Pair;
 import com.github.chenfeikun.raft.utils.PreConditions;
@@ -164,7 +163,7 @@ public class EntryPusher implements LifeCycle {
         private long lastCheckFastForwardTimeMs = System.currentTimeMillis();
 
         ConcurrentMap<Long, Pair<PushEntryRequest, CompletableFuture<PushEntryResponse>>> writeRequestMap = new ConcurrentHashMap<>();
-        BlockingQueue<Pair<PushEntryRequest, CompletableFuture<PushEntryResponse>>> compareOrTruncateRequests = new ArrayBlockingQueue<Pair<PushEntryRequest, CompletableFuture<PushEntryResponse>>>(100);
+        BlockingQueue<Pair<PushEntryRequest, CompletableFuture<PushEntryResponse>>> compareOrTruncateRequests = new ArrayBlockingQueue<>(100);
 
 
         public EntryHandler(Logger LOG) {
@@ -197,7 +196,7 @@ public class EntryPusher implements LifeCycle {
                 } else {
                     long nextIndex = raftStore.getEndIndex() + 1;
                     Pair<PushEntryRequest, CompletableFuture<PushEntryResponse>> pair = writeRequestMap.remove(nextIndex);
-                    if (pair != null) {
+                    if (pair == null) {
                         checkAbnormalFuture(raftStore.getEndIndex());
                         waitForRunning(1);
                         return;

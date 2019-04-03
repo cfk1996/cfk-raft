@@ -54,26 +54,29 @@ public class MemberState {
             peerMap.put(peerInfo.split("-")[0], peerInfo.split("-")[1]);
         }
         this.nodeConfig = config;
-        loadTerm();
+//        loadTerm();
     }
 
-    private void loadTerm() {
-        try {
-            String data = IOUtils.file2String(nodeConfig.getDefaultPath() + File.separator + TERM_PERSIST_FILE);
-            Properties properties = IOUtils.string2Properties(data);
-            if (properties.containsKey(TERM_PERSIST_KEY_TERM)) {
-                currTerm = Long.valueOf(String.valueOf(properties.getProperty(TERM_PERSIST_KEY_TERM)));
-            }
-            if (properties.containsKey(TERM_PERSIST_KEY_VOTE_FOR)) {
-                currVoteFor = String.valueOf(properties.getProperty(TERM_PERSIST_KEY_VOTE_FOR));
-                if (currVoteFor.length() == 0) {
-                    currVoteFor = null;
-                }
-            }
-        } catch (IOException e) {
-            LOG.error("Load current term failed");
-        }
-    }
+//    private void loadTerm() {
+//        try {
+//            String data = IOUtils.file2String(nodeConfig.getDefaultPath() + File.separator + TERM_PERSIST_FILE);
+//            Properties properties = IOUtils.string2Properties(data);
+//            if (properties == null) {
+//                return;
+//            }
+//            if (properties.containsKey(TERM_PERSIST_KEY_TERM)) {
+//                currTerm = Long.valueOf(String.valueOf(properties.getProperty(TERM_PERSIST_KEY_TERM)));
+//            }
+//            if (properties.containsKey(TERM_PERSIST_KEY_VOTE_FOR)) {
+//                currVoteFor = String.valueOf(properties.getProperty(TERM_PERSIST_KEY_VOTE_FOR));
+//                if (currVoteFor.length() == 0) {
+//                    currVoteFor = null;
+//                }
+//            }
+//        } catch (IOException e) {
+//            LOG.error("Load current term failed");
+//        }
+//    }
 
     public synchronized long nextTerm() {
         PreConditions.check(role == Role.CANDIDATE, ResponseCode.ILLEGAL_MEMBER_STATE, "%s != %s", role,
