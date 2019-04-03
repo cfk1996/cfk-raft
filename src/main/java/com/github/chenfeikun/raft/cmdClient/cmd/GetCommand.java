@@ -21,7 +21,7 @@ public class GetCommand implements BaseCommand {
     private String group = "default";
 
     @Parameter(names = {"--peers", "-p"}, description = "Peer info of this server")
-    private String peers = "n0-localhost:20911";
+    private String peers = "n0-localhost:10001;n1-localhost:10002;n2-localhost:10003";
 
     @Parameter(names = {"--index", "-i"}, description = "get entry from index")
     private long index = 0;

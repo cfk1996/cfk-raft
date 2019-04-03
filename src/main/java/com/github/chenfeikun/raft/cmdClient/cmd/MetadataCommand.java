@@ -22,7 +22,7 @@ public class MetadataCommand implements BaseCommand {
     private String serverId;
 
     @Parameter(names = {"--peers", "-p"}, description = "peer info of this server")
-    private String peers = "n0-localhost:20911;n1-localhost:20912;n2-localhost:20913";
+    private String peers = "n0-localhost:10001;n1-localhost:10002;n2-localhost:10003";
 
     @Override
     public void doCommand() {

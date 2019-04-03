@@ -87,7 +87,7 @@ public class MemberState {
             currTerm++;
         }
         currVoteFor = null;
-        persistTerm();
+//        persistTerm();
         return currTerm;
     }
 
@@ -95,17 +95,17 @@ public class MemberState {
         return id != null && peerMap.containsKey(id);
     }
 
-    private void persistTerm() {
-        try {
-            Properties properties = new Properties();
-            properties.put(TERM_PERSIST_KEY_TERM, currTerm);
-            properties.put(TERM_PERSIST_KEY_VOTE_FOR, currVoteFor == null ? "" : currVoteFor);
-            String data = IOUtils.properties2String(properties);
-            IOUtils.string2File(data, nodeConfig.getDefaultPath() + File.separator + TERM_PERSIST_FILE);
-        } catch (Throwable t) {
-            LOG.error("persist curr term failed", t);
-        }
-    }
+//    private void persistTerm() {
+//        try {
+//            Properties properties = new Properties();
+//            properties.put(TERM_PERSIST_KEY_TERM, currTerm);
+//            properties.put(TERM_PERSIST_KEY_VOTE_FOR, currVoteFor == null ? "" : currVoteFor);
+//            String data = IOUtils.properties2String(properties);
+//            IOUtils.string2File(data, nodeConfig.getDefaultPath() + File.separator + TERM_PERSIST_FILE);
+//        } catch (Throwable t) {
+//            LOG.error("persist curr term failed", t);
+//        }
+//    }
 
     public int peerSize() {
         return peerMap.size();
