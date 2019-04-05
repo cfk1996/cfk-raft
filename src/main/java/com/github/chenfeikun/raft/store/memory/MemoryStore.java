@@ -62,6 +62,11 @@ public class MemoryStore extends RaftStore {
     }
 
     @Override
+    public long truncate(Entry entry, long leaderTerm, String leaderId) {
+        return appendAsFollower(entry, leaderTerm, leaderId).getIndex();
+    }
+    
+    @Override
     public Entry appendAsFollower(Entry entry, long leaderTerm, String leaderId) {
         PreConditions.check(memberState.isFollower(), ResponseCode.NOT_FOLLOWER);
         synchronized (memberState) {

@@ -59,6 +59,11 @@ public class MmapFileStore extends RaftStore {
     }
 
     @Override
+    public long truncate(Entry entry, long leaderTerm, String leaderId) {
+        return 0;
+    }
+
+    @Override
     public void startup() {
 
     }

@@ -25,6 +25,8 @@ public abstract class RaftStore implements LifeCycle {
 
     public abstract long getCommittedIndex();
 
+    public abstract long truncate(Entry entry, long leaderTerm, String leaderId);
+
     /** default method*/
     public void updateCommittedIndex(long term, long committedIndex) {
 

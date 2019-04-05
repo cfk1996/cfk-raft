@@ -173,7 +173,7 @@ public class EntryPusher implements LifeCycle {
         @Override
         public void dowork() {
             try {
-                if (!memberState.isLeader()) {
+                if (!memberState.isFollower()) {
                     waitForRunning(1);
                     return;
                 }
@@ -184,11 +184,11 @@ public class EntryPusher implements LifeCycle {
                         case TRUNCATE:
                             handleTruncate(pair.getKey().getEntry().getIndex(), pair.getKey(), pair.getValue());
                             break;
-                        case COMMIT:
-                            handleCommit(pair.getKey().getCommitIndex(), pair.getKey(), pair.getValue());
-                            break;
                         case COMPARE:
                             handleCompare(pair.getKey().getEntry().getIndex(), pair.getKey(), pair.getValue());
+                            break;
+                        case COMMIT:
+                            handleCommit(pair.getKey().getCommitIndex(), pair.getKey(), pair.getValue());
                             break;
                         default:
                             break;
@@ -224,7 +224,19 @@ public class EntryPusher implements LifeCycle {
             }
         }
 
-        private void handleCompare(long index, PushEntryRequest key, CompletableFuture<PushEntryResponse> value) {
+        private CompletableFuture<PushEntryResponse> handleCompare(long compareIndex, PushEntryRequest request,
+            CompletableFuture<PushEntryResponse> future) {
+            try {
+                PreConditions.check(compareIndex == request.getEntry().getIndex(), ResponseCode.UNKNOWN);
+                PreConditions.check(request.getType() == PushEntryRequest.Type.COMPARE, ResponseCode.UNKNOWN);
+                Entry local = raftStore.get(compareIndex);
+                PreConditions.check(request.getEntry().equals(local), ResponseCode.INCONSISTENT_STATE);
+                future.complete(buildResponse(request, ResponseCode.SUCCESS.getCode()));
+            } catch (Throwable t) {
+                LOG.error("[{}] handle compare error.", memberState.getSelfId(), t);
+                future.complete(buildResponse(request, ResponseCode.INCONSISTENT_STATE.getCode()));
+            }
+            return future;
         }
 
         private CompletableFuture<PushEntryResponse> handlePush(PushEntryRequest request) throws Exception {
@@ -257,15 +269,32 @@ public class EntryPusher implements LifeCycle {
 
         public CompletableFuture<PushEntryResponse> handleCommit(long commitIndex, PushEntryRequest request,
                                                                  CompletableFuture<PushEntryResponse> future) {
-//                PreConditions.check(commitIndex == request.getCommitIndex(), ResponseCode.UNKNOWN);
-            raftStore.updateCommittedIndex(request.getTerm(), commitIndex);
-            future.complete(buildResponse(request, ResponseCode.SUCCESS.getCode()));
+            try {
+                PreConditions.check(commitIndex == request.getCommitIndex(), ResponseCode.UNKNOWN);
+                PreConditions.check(request.getType() == PushEntryRequest.Type.COMMIT, ResponseCode.UNKNOWN);
+                raftStore.updateCommittedIndex(request.getTerm(), commitIndex);
+                future.complete(buildResponse(request, ResponseCode.SUCCESS.getCode()));
+            } catch (Throwable t) {
+                LOG.error("[{}] handle commit error.", memberState.getSelfId(), t);
+                future.complete(buildResponse(request, ResponseCode.UNKNOWN.getCode()));
+            }
             return future;
         }
 
-        public CompletableFuture<PushEntryResponse> handleTruncate(long index, PushEntryRequest request,
+        public CompletableFuture<PushEntryResponse> handleTruncate(long truncateIndex, PushEntryRequest request,
                                                                    CompletableFuture<PushEntryResponse> future) {
-            return null;
+            try {
+                PreConditions.check(truncateIndex == request.getEntry().getIndex(), ResponseCode.UNKNOWN);
+                PreConditions.check(request.getType() == PushEntryRequest.Type.TRUNCATE, ResponseCode.UNKNOWN);
+                long index = raftStore.truncate(request.getEntry(), request.getTerm(), request.getLeaderId());
+                PreConditions.check(index == truncateIndex, ResponseCode.INCONSISTENT_STATE);
+                future.complete(buildResponse(request, ResponseCode.SUCCESS.getCode()));
+                raftStore.updateCommittedIndex(request.getTerm(), request.getCommitIndex());
+            } catch (Throwable t) {
+                LOG.error("[{}] handleTruncate error.", memberState.getSelfId(), t);
+                future.complete(buildResponse(request, ResponseCode.INCONSISTENT_STATE.getCode()));
+            }
+            return future;
         }
 
 
@@ -436,7 +465,7 @@ public class EntryPusher implements LifeCycle {
                 }
                 waitForRunning(1);
             } catch (Throwable t) {
-                LOG.error("entry dispatcher error.", t);
+                LOG.error("[{}] .peer - [{}] entry dispatcher error.", memberState.getSelfId(), peerId, t);
                 Utils.sleep(500);
             }
         }
@@ -655,7 +684,7 @@ public class EntryPusher implements LifeCycle {
         @Override
         public void dowork() {
             try {
-                if (Utils.elapsed(lastCheckLeakTimeMs) > 3000) {
+                if (Utils.elapsed(lastPrintWatermarkTimeMs) > 15000) {
                     LOG.info("[{}][{}] term={} ledgerBegin={} ledgerEnd={} committed={} watermarks={}",
                             memberState.getSelfId(), memberState.getRole(), memberState.getCurrTerm(),
                             raftStore.getBeginIndex(), raftStore.getEndIndex(), raftStore.getCommittedIndex(),
@@ -663,7 +692,7 @@ public class EntryPusher implements LifeCycle {
                     lastPrintWatermarkTimeMs = System.currentTimeMillis();
                 }
                 if (!memberState.isLeader()) {
-                    waitForRunning(1);
+                    waitForRunning(1000);
                     return;
                 }
                 long currTerm = memberState.getCurrTerm();

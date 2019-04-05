@@ -96,6 +96,7 @@ public class NodeServer implements LifeCycle, RaftProtocolHander {
             response.copyBaseInfo(request);
             response.setCode(e.getCode().getCode());
             response.setLeaderId(memberState.getLeaderId());
+            response.setTerm(memberState.getCurrTerm());
             return CompletableFuture.completedFuture(response);
         }
     }

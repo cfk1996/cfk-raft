@@ -87,6 +87,7 @@ public class Client implements LifeCycle {
             request.setBeginIndex(index);
             GetEntriesResponse response = clientRpcService.get(request).get();
             if (response.getCode() == ResponseCode.NOT_LEADER.getCode()) {
+                leaderId = response.getLeaderId();
                 waitOnUpdatingMetadata(1500, true);
                 if (leaderId != null) {
                     request.setRemoteId(leaderId);
@@ -106,11 +107,13 @@ public class Client implements LifeCycle {
     @Override
     public void startup() {
          this.clientRpcService.startup();
+         metadataUpdater.start();
     }
 
     @Override
     public void shutdown() {
          this.clientRpcService.shutdown();
+         metadataUpdater.shutdown();
     }
 
     private synchronized void needFreshMetadata() {

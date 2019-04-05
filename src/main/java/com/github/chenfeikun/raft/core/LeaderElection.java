@@ -200,7 +200,7 @@ public class LeaderElection implements LifeCycle {
 
     private void changeRoleToCandidate(long term) {
         synchronized (memberState) {
-            if (term > memberState.getCurrTerm()) {
+            if (term >= memberState.getCurrTerm()) {
                 memberState.changeToCandidate(term);
 //                handleRoleChange(term, MemberState.Role.CANDIDATE);
                 logger.info("[{}] [ChangeRoleToCandidate] from term: {} and currTerm: {}", memberState.getSelfId(), term, memberState.getCurrTerm());

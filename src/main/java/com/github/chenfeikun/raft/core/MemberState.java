@@ -126,6 +126,7 @@ public class MemberState {
         //the currTerm should be promoted in handleVote thread
         this.role = Role.CANDIDATE;
         this.leaderId = null;
+        this.currVoteFor = null;
     }
 
     public synchronized void changeToFollower(long term, String leaderId) {
