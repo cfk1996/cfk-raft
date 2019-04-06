@@ -233,7 +233,7 @@ public class EntryPusher implements LifeCycle {
                 PreConditions.check(request.getEntry().equals(local), ResponseCode.INCONSISTENT_STATE);
                 future.complete(buildResponse(request, ResponseCode.SUCCESS.getCode()));
             } catch (Throwable t) {
-                LOG.error("[{}] handle compare error.", memberState.getSelfId(), t);
+                LOG.error("[{}] handle compare error.CompareIndex = {}", memberState.getSelfId(), compareIndex);
                 future.complete(buildResponse(request, ResponseCode.INCONSISTENT_STATE.getCode()));
             }
             return future;
@@ -523,12 +523,12 @@ public class EntryPusher implements LifeCycle {
                     truncateIndex = raftStore.getBeginIndex();
                 } else if (compareIndex < response.getBeginIndex()) {
                     truncateIndex = raftStore.getBeginIndex();
-                } else if (compareIndex > raftStore.getEndIndex()) {
+                } else if (compareIndex > response.getEndIndex()) {
                     /*
                     the compareIndex is bigger than follower's end index
                     this is frequently because compareIndex is usually init at leader's end index.
                      */
-                    compareIndex = raftStore.getBeginIndex();
+                    compareIndex = response.getEndIndex();
                 } else {
                     /*
                     Compare failed and the index is in the follower'ss range.

@@ -72,7 +72,7 @@ public class MemoryStore extends RaftStore {
         synchronized (memberState) {
             PreConditions.check(memberState.isFollower(), ResponseCode.NOT_FOLLOWER);
             PreConditions.check(leaderTerm == memberState.getCurrTerm(), ResponseCode.INCONSISTENT_TERM);
-            PreConditions.check(leaderId == memberState.getLeaderId(), ResponseCode.INCONSISTENT_LEADER);
+            PreConditions.check(leaderId.equals(memberState.getLeaderId()), ResponseCode.INCONSISTENT_LEADER);
             endTerm = memberState.getCurrTerm();
             endIndex = entry.getIndex();
             committedIndex = entry.getIndex();
