@@ -16,6 +16,7 @@ public enum RequestCode {
     METADATA(50000, ""),
     APPEND(50001, ""),
     GET(50002, ""),
+    GET_SINGLE(50003, ""),
     VOTE(51001, ""),
     HEART_BEAT(51002, ""),
     PULL(51003, ""),

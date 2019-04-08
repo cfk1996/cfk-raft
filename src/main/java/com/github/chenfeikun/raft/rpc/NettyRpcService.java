@@ -91,11 +91,22 @@ public class NettyRpcService extends RpcService {
         this.remotingServer.registerProcessor(RequestCode.METADATA.getCode(), protocolProcessor, null);
         this.remotingServer.registerProcessor(RequestCode.APPEND.getCode(), protocolProcessor, null);
         this.remotingServer.registerProcessor(RequestCode.GET.getCode(), protocolProcessor, null);
-//        this.remotingServer.registerProcessor(RequestCode.PULL.getCode(), protocolProcessor, null);
         this.remotingServer.registerProcessor(RequestCode.PUSH.getCode(), protocolProcessor, null);
         this.remotingServer.registerProcessor(RequestCode.VOTE.getCode(), protocolProcessor, null);
         this.remotingServer.registerProcessor(RequestCode.HEART_BEAT.getCode(), protocolProcessor, null);
+        // register a backdoor for raft dashboard
+        NettyRequestProcessor backdoor = new NettyRequestProcessor() {
+            @Override
+            public RemotingCommand processRequest(ChannelHandlerContext ctx, RemotingCommand request) throws Exception {
+                return NettyRpcService.this.processBackdoor(ctx, request);
+            }
 
+            @Override
+            public boolean rejectRequest() {
+                return false;
+            }
+        };
+        this.remotingServer.registerProcessor(RequestCode.GET_SINGLE.getCode(), backdoor, null);
     }
 
     /**
@@ -125,6 +136,23 @@ public class NettyRpcService extends RpcService {
         } catch (Throwable e) {
             LOG.error("Process request over, but failed to get response. Request={},Response={}", request, response);
         }
+    }
+
+    private RemotingCommand processBackdoor(ChannelHandlerContext ctx, RemotingCommand request) throws Exception {
+         RequestCode code = RequestCode.valueOf(request.getCode());
+         switch (code) {
+             case GET_SINGLE:
+                 GetEntriesRequest getEntriesRequest = JSON.parseObject(request.getBody(), GetEntriesRequest.class);
+                 CompletableFuture<GetEntriesResponse> future = handleGetSingle(getEntriesRequest);
+                 future.whenCompleteAsync((x, y) -> {
+                     writeResponse(x, y, request, ctx);
+                 }, futureExecutor);
+                 break;
+             default:
+                 LOG.error("error request code");
+                 break;
+         }
+         return null;
     }
 
     private RemotingCommand processRequest(ChannelHandlerContext ctx, RemotingCommand request) throws Exception {
@@ -291,6 +319,10 @@ public class NettyRpcService extends RpcService {
             future.complete(response);
         }
         return future;
+    }
+
+    public CompletableFuture<GetEntriesResponse> handleGetSingle(GetEntriesRequest request) throws Exception {
+        return nodeServer.handleGetSingle(request);
     }
 
     @Override

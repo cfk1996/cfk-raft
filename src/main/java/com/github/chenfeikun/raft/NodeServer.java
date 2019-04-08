@@ -176,6 +176,32 @@ public class NodeServer implements LifeCycle, RaftProtocolHander {
         }
     }
 
+    public CompletableFuture<GetEntriesResponse> handleGetSingle(GetEntriesRequest request) throws Exception {
+        try {
+            PreConditions.check(memberState.getSelfId().equals(request.getRemoteId()), ResponseCode.UNKNOWN_MEMBER);
+            PreConditions.check(memberState.getGroup().equals(request.getGroup()), ResponseCode.UNKNOWN_GROUP);
+            Entry entry = raftStore.get(request.getBeginIndex());
+            GetEntriesResponse response = new GetEntriesResponse();
+            response.setLocalId(memberState.getSelfId());
+            response.setGroup(memberState.getGroup());
+            response.setTerm(memberState.getCurrTerm());
+            response.setLeaderId(memberState.getLeaderId());
+            if (entry != null) {
+                response.setEntries(Collections.singletonList(entry));
+            }
+            return CompletableFuture.completedFuture(response);
+        } catch (RaftException e) {
+            LOG.error("[{}] handle get single failed", memberState.getSelfId(), e);
+            GetEntriesResponse response = new GetEntriesResponse();
+            response.copyBaseInfo(request);
+            response.setCode(e.getCode().getCode());
+            response.setTerm(memberState.getCurrTerm());
+            response.setLocalId(memberState.getSelfId());
+            response.setLeaderId(memberState.getLeaderId());
+            return CompletableFuture.completedFuture(response);
+        }
+    }
+
     @Override
     public CompletableFuture<GetEntriesResponse> handleGet(GetEntriesRequest request) throws Exception {
         try {
@@ -187,6 +213,9 @@ public class NodeServer implements LifeCycle, RaftProtocolHander {
             Entry entry = raftStore.get(request.getBeginIndex());
             GetEntriesResponse response = new GetEntriesResponse();
             response.setGroup(memberState.getGroup());
+            response.setLeaderId(memberState.getLeaderId());
+            response.setTerm(memberState.getCurrTerm());
+            response.setLocalId(memberState.getSelfId());
             if (entry != null) {
                 response.setEntries(Collections.singletonList(entry));
             }
@@ -197,6 +226,8 @@ public class NodeServer implements LifeCycle, RaftProtocolHander {
             response.copyBaseInfo(request);
             response.setCode(e.getCode().getCode());
             response.setLeaderId(memberState.getLeaderId());
+            response.setTerm(memberState.getCurrTerm());
+            response.setLocalId(memberState.getSelfId());
             return CompletableFuture.completedFuture(response);
         }
     }

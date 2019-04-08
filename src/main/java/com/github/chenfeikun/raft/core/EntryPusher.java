@@ -488,7 +488,7 @@ public class EntryPusher implements LifeCycle {
                 } else if (compareIndex > raftStore.getEndIndex() || compareIndex < raftStore.getBeginIndex()) {
                     LOG.info("[Push-{}][DoCompare] compareIndex={} out of range {}-{}", peerId, compareIndex,
                             raftStore.getBeginIndex(), raftStore.getEndIndex());
-                    compareIndex = raftStore.getBeginIndex();
+                    compareIndex = raftStore.getEndIndex();
                 }
 
                 Entry entry = raftStore.get(compareIndex);

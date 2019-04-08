@@ -104,6 +104,14 @@ public class MemoryStore extends RaftStore {
         }
     }
 
+    @Override
+    public void updateCommittedIndex(long term, long newCommittedIndex) {
+        if (term != memberState.getCurrTerm()) {
+            return;
+        }
+        this.committedIndex = Math.min(newCommittedIndex, endIndex);
+    }
+
     private void updateEndIndexAndTerm() {
         if (getMemberState() != null) {
             getMemberState().updateEndIndexAndTerm(endIndex, endTerm);
