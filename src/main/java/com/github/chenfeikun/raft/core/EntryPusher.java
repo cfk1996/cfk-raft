@@ -95,6 +95,7 @@ public class EntryPusher implements LifeCycle {
             response.setLeaderId(memberState.getSelfId());
             response.setIndex(entry.getIndex());
             response.setTerm(entry.getTerm());
+            response.setLocalId(memberState.getSelfId());
             response.setPos(entry.getPos());
             return AppendFuture.newCompletedFuture(entry.getPos(), response);
         } else {
@@ -710,6 +711,7 @@ public class EntryPusher implements LifeCycle {
                             response.setIndex(futureEntry.getKey());
                             response.setCode(ResponseCode.TERM_CHANGED.getCode());
                             response.setLeaderId(memberState.getLeaderId());
+                            response.setLocalId(memberState.getLeaderId());
                             futureEntry.getValue().complete(response);
                         }
                         pendingAppendResponsesByTerm.remove(term);
@@ -752,6 +754,7 @@ public class EntryPusher implements LifeCycle {
                                 response.setGroup(memberState.getGroup());
                                 response.setTerm(currTerm);
                                 response.setIndex(i);
+                                response.setLocalId(memberState.getSelfId());
                                 response.setLeaderId(memberState.getSelfId());
                                 response.setPos(((AppendFuture) future).getPos());
                                 future.complete(response);
@@ -774,6 +777,7 @@ public class EntryPusher implements LifeCycle {
                             response.setCode(ResponseCode.WAIT_QUORUM_ACK_TIMEOUT.getCode());
                             response.setTerm(currTerm);
                             response.setIndex(i);
+                            response.setLocalId(memberState.getSelfId());
                             response.setLeaderId(memberState.getSelfId());
                             future.complete(response);
                         } else {
@@ -792,6 +796,7 @@ public class EntryPusher implements LifeCycle {
                             response.setTerm(currTerm);
                             response.setIndex(futureEntry.getKey());
                             response.setLeaderId(memberState.getSelfId());
+                            response.setLocalId(memberState.getSelfId());
                             response.setPos(((AppendFuture) futureEntry.getValue()).getPos());
                             futureEntry.getValue().complete(response);
                             responses.remove(futureEntry.getKey());

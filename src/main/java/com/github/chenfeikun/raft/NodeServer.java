@@ -159,6 +159,7 @@ public class NodeServer implements LifeCycle, RaftProtocolHander {
                 response.setCode(ResponseCode.LEADER_PENDING_FULL.getCode());
                 response.setTerm(currentTerm);
                 response.setLeaderId(memberState.getSelfId());
+                response.setLocalId(memberState.getSelfId());
                 return AppendFuture.newCompletedFuture(-1, response);
             } else {
                 Entry entry = new Entry();
@@ -172,6 +173,7 @@ public class NodeServer implements LifeCycle, RaftProtocolHander {
             response.copyBaseInfo(request);
             response.setCode(e.getCode().getCode());
             response.setLeaderId(memberState.getLeaderId());
+            response.setLocalId(memberState.getSelfId());
             return AppendFuture.newCompletedFuture(-1, response);
         }
     }
