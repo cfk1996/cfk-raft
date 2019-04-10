@@ -352,7 +352,7 @@ public class EntryPusher implements LifeCycle {
             if (pair == null) {
                 return;
             }
-            LOG.warn("[PushFastForward] ledgerEndIndex={} entryIndex={}", endIndex, minFastForwardIndex);
+            LOG.warn("[PushFastForward] endIndex={} entryIndex={}", endIndex, minFastForwardIndex);
             pair.getValue().complete(buildResponse(pair.getKey(), ResponseCode.INCONSISTENT_STATE.getCode()));
         }
 
@@ -630,7 +630,7 @@ public class EntryPusher implements LifeCycle {
                             updatePeerWaterMark(x.getTerm(), peerId, x.getIndex());
                             ackChecker.wakeup();
                             break;
-                        case INCONSISTENT_TERM:
+                        case INCONSISTENT_STATE:
                             LOG.info("get inconsisent state when push index={}, term = {}", x.getIndex(), x.getTerm());
                             changeState(-1, PushEntryRequest.Type.COMPARE);
                             break;
